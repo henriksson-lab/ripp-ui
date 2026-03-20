@@ -13,6 +13,6 @@ tobj     = { version = "4" }
 actix-web = "4"
 bytes     = "1"
 futures   = "0.3"
-image     = { version = "0.25", features = ["jpeg"] }
+mozjpeg   = "0.10"
 tokio     = { version = "1", features = ["rt-multi-thread", "signal", "sync"] }
 wgpu      = "0.19"

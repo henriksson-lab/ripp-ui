@@ -9,7 +9,7 @@ use futures::stream;
 use glam::Mat4;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use wgpu::util::DeviceExt;
 
@@ -46,7 +46,7 @@ struct Renderer {
     target: wgpu::Texture,
     target_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
-    staging: wgpu::Buffer,
+    staging: [wgpu::Buffer; 2], // ping-pong for GPU-CPU overlap
     index_count: u32,
 }
 
@@ -210,13 +210,14 @@ impl Renderer {
         });
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // ── Staging buffer ────────────────────────────────────────────────────
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        // ── Two staging buffers (ping-pong) ───────────────────────────────────
+        let mk_staging = || device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: (BPR * H) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let staging = [mk_staging(), mk_staging()];
 
         // Seed uniform buffer
         queue.write_buffer(
@@ -229,9 +230,10 @@ impl Renderer {
                target, target_view, depth_view, staging, index_count }
     }
 
-    /// Render one frame and return it as a JPEG byte buffer.
-    fn render_frame(&self, rotation: f32) -> Vec<u8> {
-        // Update MVP
+    /// Encode + submit render commands for this frame.
+    /// Copies the result into `staging[slot]`. Returns the submission index
+    /// immediately — the GPU may still be working.
+    fn submit_frame(&self, rotation: f32, slot: usize) -> wgpu::SubmissionIndex {
         let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, W as f32 / H as f32, 0.1, 100.0);
         let view = Mat4::look_at_rh(glam::Vec3::new(0.0, 2.0, 6.0), glam::Vec3::ZERO, glam::Vec3::Y);
         let mvp = proj * view * Mat4::from_rotation_y(rotation);
@@ -240,7 +242,6 @@ impl Renderer {
             bytemuck::cast_slice(&[Uniforms { mvp: mvp.to_cols_array_2d() }]),
         );
 
-        // Encode render pass
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -270,8 +271,6 @@ impl Renderer {
             pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..self.index_count, 0, 0..1);
         }
-
-        // Copy texture → staging buffer
         enc.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.target,
@@ -280,7 +279,7 @@ impl Renderer {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::ImageCopyBuffer {
-                buffer: &self.staging,
+                buffer: &self.staging[slot],
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(BPR),
@@ -289,29 +288,38 @@ impl Renderer {
             },
             wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
         );
+        self.queue.submit([enc.finish()])
+    }
 
-        self.queue.submit([enc.finish()]);
-
-        // CPU readback (blocking)
-        let slice = self.staging.slice(..);
+    /// Wait for `sub`, map `staging[slot]`, JPEG-encode the RGBA data
+    /// **directly from the mapped GPU buffer** (zero copies), then unmap.
+    /// Returns the finished JPEG bytes.
+    fn readback_and_encode(&self, sub: wgpu::SubmissionIndex, slot: usize) -> Vec<u8> {
+        let buf = &self.staging[slot];
+        let slice = buf.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::Maintain::WaitForSubmissionIndex(sub));
         rx.recv().unwrap().unwrap();
 
-        // BPR is already aligned (960*4=3840, 3840/256=15 exact), so direct copy
-        let pixels: Vec<u8> = slice.get_mapped_range().to_vec();
-        self.staging.unmap();
-
-        // RGBA → RGB JPEG
-        let rgba = image::RgbaImage::from_raw(W, H, pixels).unwrap();
-        let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
-        let mut jpeg = Vec::new();
-        let mut cursor = std::io::Cursor::new(&mut jpeg);
-        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 82);
-        encoder.encode(rgb.as_raw(), W, H, image::ExtendedColorType::Rgb8).unwrap();
+        // Encode while the buffer is still mapped — no to_vec(), no to_rgb8().
+        let mapped = slice.get_mapped_range();
+        let jpeg = encode_jpeg(&*mapped);
+        drop(mapped); // must drop BufferView before unmap
+        buf.unmap();
         jpeg
     }
+}
+
+/// JPEG-encode raw RGBA pixels using mozjpeg (libjpeg-turbo + SIMD).
+/// JCS_EXT_RGBA reads 4 bytes/pixel and ignores the alpha channel.
+fn encode_jpeg(rgba: &[u8]) -> Vec<u8> {
+    let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_EXT_RGBA);
+    comp.set_size(W as usize, H as usize);
+    comp.set_quality(82.0);
+    let mut comp = comp.start_compress(Vec::new()).expect("mozjpeg start");
+    comp.write_scanlines(rgba).expect("mozjpeg write");
+    comp.finish().expect("mozjpeg finish")
 }
 
 // Renderer is sent into a blocking thread — verify it is Send/Sync.
@@ -371,19 +379,44 @@ async fn main() -> std::io::Result<()> {
 
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    // Render loop in a dedicated blocking thread
+    // ── Render + encode thread ────────────────────────────────────────────────
+    // Timeline per iteration N (N > 0):
+    //   submit frame N into staging[N%2]              ← CPU, GPU starts async
+    //   wait for frame N-1 GPU + encode (mozjpeg)     ← GPU runs N while CPU encodes N-1
+    //   broadcast JPEG → all live HTTP clients
+    //   sleep remainder of 33 ms budget
+    //
+    // With mozjpeg (~2-3 ms encode) a separate encode thread adds overhead
+    // without benefit; everything fits in one loop.  Stale-frame build-up is
+    // impossible: there is no queue — each iteration produces exactly one JPEG.
     let tx_render = tx.clone();
     let shutdown_render = shutdown.clone();
     tokio::task::spawn_blocking(move || {
         let start = Instant::now();
+        let mut prev: Option<(wgpu::SubmissionIndex, usize)> = None;
+        let mut frame: usize = 0;
+
         while !shutdown_render.load(Ordering::Relaxed) {
-            // Only render when someone is watching
+            let deadline = Instant::now() + Duration::from_millis(33);
+
             if tx_render.receiver_count() > 0 {
+                let slot = frame % 2;
                 let rotation = start.elapsed().as_secs_f32() * 0.8;
-                let jpeg = renderer.render_frame(rotation);
-                let _ = tx_render.send(Bytes::from(jpeg));
+                let sub = renderer.submit_frame(rotation, slot);
+
+                // GPU executes frame `slot` while we encode the previous frame.
+                if let Some((prev_sub, prev_slot)) = prev.replace((sub, slot)) {
+                    let jpeg = renderer.readback_and_encode(prev_sub, prev_slot);
+                    let _ = tx_render.send(Bytes::from(jpeg));
+                }
+
+                frame += 1;
             }
-            std::thread::sleep(std::time::Duration::from_millis(33)); // ~30 fps
+
+            let now = Instant::now();
+            if now < deadline {
+                std::thread::sleep(deadline - now);
+            }
         }
     });
 
