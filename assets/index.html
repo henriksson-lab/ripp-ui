@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teapot — Server-Side Rendering</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d1a;
+      color: #c8c8d8;
+      font-family: system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      color: #e8e8f0;
+    }
+
+    .frame {
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      line-height: 0; /* remove gap under img */
+    }
+
+    img#stream {
+      display: block;
+      width: min(960px, 100%);
+      height: auto;
+    }
+
+    footer {
+      font-size: 0.75rem;
+      color: #555570;
+    }
+  </style>
+</head>
+<body>
+  <h1>Rotating Teapot &mdash; Server-Side Rendering</h1>
+
+  <div class="frame">
+    <img id="stream" src="/stream" alt="live teapot stream">
+  </div>
+
+  <footer>Rendered server-side with wgpu &bull; streamed via MJPEG over HTTP</footer>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[package]
+name = "claude-ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced     = { version = "0.13", features = ["wgpu", "tokio"] }
+glam     = "0.29"
+bytemuck = { version = "1.16", features = ["derive"] }
+tobj     = { version = "4" }
+
+# Web server binary
+actix-web = "4"
+bytes     = "1"
+futures   = "0.3"
+image     = { version = "0.25", features = ["jpeg"] }
+tokio     = { version = "1", features = ["rt-multi-thread", "signal", "sync"] }
+wgpu      = "0.19"
