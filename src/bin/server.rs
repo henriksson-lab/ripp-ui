@@ -7,6 +7,7 @@ use bytes::Bytes;
 use bytemuck::{Pod, Zeroable};
 use futures::stream;
 use glam::Mat4;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::broadcast;
@@ -368,11 +369,14 @@ async fn main() -> std::io::Result<()> {
     let (tx, _) = broadcast::channel::<Bytes>(4);
     let tx: Arc<broadcast::Sender<Bytes>> = Arc::new(tx);
 
+    let shutdown = Arc::new(AtomicBool::new(false));
+
     // Render loop in a dedicated blocking thread
     let tx_render = tx.clone();
+    let shutdown_render = shutdown.clone();
     tokio::task::spawn_blocking(move || {
         let start = Instant::now();
-        loop {
+        while !shutdown_render.load(Ordering::Relaxed) {
             // Only render when someone is watching
             if tx_render.receiver_count() > 0 {
                 let rotation = start.elapsed().as_secs_f32() * 0.8;
@@ -399,7 +403,8 @@ async fn main() -> std::io::Result<()> {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
         println!("\nShutting down…");
-        handle.stop(true).await; // graceful: wait for active connections to finish
+        shutdown.store(true, Ordering::Relaxed); // unblock the render loop
+        handle.stop(true).await;                 // drain active HTTP connections
     });
 
     server.await
