@@ -7,53 +7,63 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html, body {
+      width: 100%; height: 100%;
+    }
+
     body {
-      background: #0d0d1a;
-      color: #c8c8d8;
-      font-family: system-ui, sans-serif;
-      min-height: 100vh;
+      background: #1a1a2e;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #left {
+      flex: 1;
+      display: flex;
       align-items: center;
       justify-content: center;
-      gap: 1.5rem;
-      padding: 2rem;
     }
 
-    h1 {
-      font-size: 1.4rem;
-      font-weight: 400;
-      letter-spacing: 0.05em;
-      color: #e8e8f0;
+    #left span {
+      color: white;
+      font-family: system-ui, sans-serif;
+      font-size: 32px;
     }
 
-    .frame {
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      line-height: 0; /* remove gap under img */
+    #right {
+      flex: 1;
+      display: flex;
+      align-items: stretch;
     }
 
-    img#stream {
+    #right img {
       display: block;
-      width: min(960px, 100%);
-      height: auto;
-    }
-
-    footer {
-      font-size: 0.75rem;
-      color: #555570;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
     }
   </style>
 </head>
 <body>
-  <h1>Rotating Teapot &mdash; Server-Side Rendering</h1>
-
-  <div class="frame">
-    <img id="stream" src="/stream" alt="live teapot stream">
+  <div id="left">
+    <span>Hello World</span>
+  </div>
+  <div id="right">
+    <img id="stream" alt="live teapot stream">
   </div>
 
-  <footer>Rendered server-side with wgpu &bull; streamed via MJPEG over HTTP</footer>
+  <script>
+    function reconnect() {
+      var img = document.getElementById('stream');
+      var right = document.getElementById('right');
+      var w = right.clientWidth;
+      var h = right.clientHeight;
+      img.src = '/stream?w=' + w + '&h=' + h;
+    }
+    window.addEventListener('load', reconnect);
+    window.addEventListener('resize', reconnect);
+  </script>
 </body>
 </html>

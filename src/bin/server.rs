@@ -7,18 +7,11 @@ use bytes::Bytes;
 use bytemuck::{Pod, Zeroable};
 use futures::stream;
 use glam::Mat4;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use serde::Deserialize;
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
 use wgpu::util::DeviceExt;
 
-// ── Frame dimensions ───────────────────────────────────────────────────────
-// 960 * 4 = 3840 bytes/row  →  3840 / 256 = 15 (exact), zero staging padding.
-const W: u32 = 960;
-const H: u32 = 540;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const BPR: u32 = W * 4; // bytes per row (already 256-aligned)
 
 // ── GPU data types ─────────────────────────────────────────────────────────
 #[repr(C)]
@@ -36,6 +29,9 @@ struct Uniforms {
 
 // ── Headless renderer ──────────────────────────────────────────────────────
 struct Renderer {
+    w: u32,
+    h: u32,
+    bpr: u32,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
@@ -46,12 +42,14 @@ struct Renderer {
     target: wgpu::Texture,
     target_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
-    staging: [wgpu::Buffer; 2], // ping-pong for GPU-CPU overlap
+    staging: [wgpu::Buffer; 2],
     index_count: u32,
 }
 
 impl Renderer {
-    async fn new() -> Self {
+    async fn new(w: u32, h: u32) -> Self {
+        let bpr = (w * 4 + 255) / 256 * 256;
+
         // ── wgpu init ────────────────────────────────────────────────────────
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
         let adapter = instance
@@ -75,7 +73,6 @@ impl Renderer {
         .expect("failed to load teapot.obj");
         let mesh = &models[0].mesh;
 
-        // Expand to flat-shaded triangles (OBJ has no normals)
         let pos = &mesh.positions;
         let idx = &mesh.indices;
         let mut verts: Vec<Vertex> = Vec::with_capacity(idx.len());
@@ -182,7 +179,7 @@ impl Renderer {
             multiview: None,
         });
 
-        let ext = wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 };
+        let ext = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
 
         // ── Colour target ─────────────────────────────────────────────────────
         let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -213,29 +210,34 @@ impl Renderer {
         // ── Two staging buffers (ping-pong) ───────────────────────────────────
         let mk_staging = || device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (BPR * H) as u64,
+            size: (bpr * h) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let staging = [mk_staging(), mk_staging()];
 
-        // Seed uniform buffer
         queue.write_buffer(
             &ubuf,
             0,
             bytemuck::cast_slice(&[Uniforms { mvp: Mat4::IDENTITY.to_cols_array_2d() }]),
         );
 
-        Self { device, queue, pipeline, vbuf, ibuf, ubuf, bind_group,
+        Self { w, h, bpr, device, queue, pipeline, vbuf, ibuf, ubuf, bind_group,
                target, target_view, depth_view, staging, index_count }
     }
 
-    /// Encode + submit render commands for this frame.
-    /// Copies the result into `staging[slot]`. Returns the submission index
-    /// immediately — the GPU may still be working.
     fn submit_frame(&self, rotation: f32, slot: usize) -> wgpu::SubmissionIndex {
-        let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, W as f32 / H as f32, 0.1, 100.0);
-        let view = Mat4::look_at_rh(glam::Vec3::new(0.0, 2.0, 6.0), glam::Vec3::ZERO, glam::Vec3::Y);
+        let proj = Mat4::perspective_rh(
+            std::f32::consts::FRAC_PI_4,
+            self.w as f32 / self.h as f32,
+            0.1,
+            100.0,
+        );
+        let view = Mat4::look_at_rh(
+            glam::Vec3::new(0.0, 2.0, 6.0),
+            glam::Vec3::ZERO,
+            glam::Vec3::Y,
+        );
         let mvp = proj * view * Mat4::from_rotation_y(rotation);
         self.queue.write_buffer(
             &self.ubuf, 0,
@@ -282,18 +284,15 @@ impl Renderer {
                 buffer: &self.staging[slot],
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some(BPR),
+                    bytes_per_row: Some(self.bpr),
                     rows_per_image: None,
                 },
             },
-            wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+            wgpu::Extent3d { width: self.w, height: self.h, depth_or_array_layers: 1 },
         );
         self.queue.submit([enc.finish()])
     }
 
-    /// Wait for `sub`, map `staging[slot]`, JPEG-encode the RGBA data
-    /// **directly from the mapped GPU buffer** (zero copies), then unmap.
-    /// Returns the finished JPEG bytes.
     fn readback_and_encode(&self, sub: wgpu::SubmissionIndex, slot: usize) -> Vec<u8> {
         let buf = &self.staging[slot];
         let slice = buf.slice(..);
@@ -302,23 +301,29 @@ impl Renderer {
         self.device.poll(wgpu::Maintain::WaitForSubmissionIndex(sub));
         rx.recv().unwrap().unwrap();
 
-        // Encode while the buffer is still mapped — no to_vec(), no to_rgb8().
         let mapped = slice.get_mapped_range();
-        let jpeg = encode_jpeg(&*mapped);
-        drop(mapped); // must drop BufferView before unmap
+        let jpeg = encode_jpeg(&*mapped, self.w, self.h, self.bpr);
+        drop(mapped);
         buf.unmap();
         jpeg
     }
 }
 
-/// JPEG-encode raw RGBA pixels using mozjpeg (libjpeg-turbo + SIMD).
-/// JCS_EXT_RGBA reads 4 bytes/pixel and ignores the alpha channel.
-fn encode_jpeg(rgba: &[u8]) -> Vec<u8> {
+/// JPEG-encode raw RGBA pixels, handling row-stride padding when bpr > w*4.
+fn encode_jpeg(rgba: &[u8], w: u32, h: u32, bpr: u32) -> Vec<u8> {
     let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_EXT_RGBA);
-    comp.set_size(W as usize, H as usize);
+    comp.set_size(w as usize, h as usize);
     comp.set_quality(82.0);
     let mut comp = comp.start_compress(Vec::new()).expect("mozjpeg start");
-    comp.write_scanlines(rgba).expect("mozjpeg write");
+    if bpr == w * 4 {
+        comp.write_scanlines(rgba).expect("mozjpeg write");
+    } else {
+        for row in 0..h as usize {
+            let start = row * bpr as usize;
+            let end = start + (w * 4) as usize;
+            comp.write_scanlines(&rgba[start..end]).expect("mozjpeg write");
+        }
+    }
     comp.finish().expect("mozjpeg finish")
 }
 
@@ -334,31 +339,54 @@ async fn index() -> HttpResponse {
         .body(include_str!("../../assets/index.html"))
 }
 
-async fn mjpeg_stream(
-    tx: web::Data<Arc<broadcast::Sender<Bytes>>>,
-) -> HttpResponse {
-    let rx = tx.subscribe();
+#[derive(Deserialize)]
+struct SizeQuery {
+    w: Option<u32>,
+    h: Option<u32>,
+}
 
-    let body = stream::unfold(rx, |mut rx| async move {
+async fn mjpeg_stream(query: web::Query<SizeQuery>) -> HttpResponse {
+    let w = query.w.unwrap_or(480).max(64).min(3840);
+    let h = query.h.unwrap_or(540).max(64).min(2160);
+
+    let renderer = Renderer::new(w, h).await;
+    let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(2);
+
+    tokio::task::spawn_blocking(move || {
+        let start = Instant::now();
+        let mut prev: Option<(wgpu::SubmissionIndex, usize)> = None;
+        let mut frame: usize = 0;
         loop {
-            match rx.recv().await {
-                Ok(jpeg) => {
-                    let mut frame = Vec::with_capacity(64 + jpeg.len());
-                    frame.extend_from_slice(
-                        format!(
-                            "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
-                            jpeg.len()
-                        )
-                        .as_bytes(),
-                    );
-                    frame.extend_from_slice(&jpeg);
-                    frame.extend_from_slice(b"\r\n");
-                    return Some((Ok::<_, actix_web::Error>(Bytes::from(frame)), rx));
+            let deadline = Instant::now() + Duration::from_millis(33);
+            let slot = frame % 2;
+            let rotation = start.elapsed().as_secs_f32() * 0.8;
+            let sub = renderer.submit_frame(rotation, slot);
+            if let Some((ps, pslot)) = prev.replace((sub, slot)) {
+                let jpeg = renderer.readback_and_encode(ps, pslot);
+                if tx.blocking_send(Bytes::from(jpeg)).is_err() {
+                    break;
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+            frame += 1;
+            let now = Instant::now();
+            if now < deadline {
+                std::thread::sleep(deadline - now);
             }
         }
+    });
+
+    let body = stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|jpeg| {
+            let header = format!(
+                "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                jpeg.len()
+            );
+            let mut frame = Vec::with_capacity(header.len() + jpeg.len() + 2);
+            frame.extend_from_slice(header.as_bytes());
+            frame.extend_from_slice(&jpeg);
+            frame.extend_from_slice(b"\r\n");
+            (Ok::<_, actix_web::Error>(Bytes::from(frame)), rx)
+        })
     });
 
     HttpResponse::Ok()
@@ -370,74 +398,20 @@ async fn mjpeg_stream(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("Initialising GPU…");
-    let renderer = Renderer::new().await;
-    println!("GPU ready. Starting render loop.");
-
-    let (tx, _) = broadcast::channel::<Bytes>(4);
-    let tx: Arc<broadcast::Sender<Bytes>> = Arc::new(tx);
-
-    let shutdown = Arc::new(AtomicBool::new(false));
-
-    // ── Render + encode thread ────────────────────────────────────────────────
-    // Timeline per iteration N (N > 0):
-    //   submit frame N into staging[N%2]              ← CPU, GPU starts async
-    //   wait for frame N-1 GPU + encode (mozjpeg)     ← GPU runs N while CPU encodes N-1
-    //   broadcast JPEG → all live HTTP clients
-    //   sleep remainder of 33 ms budget
-    //
-    // With mozjpeg (~2-3 ms encode) a separate encode thread adds overhead
-    // without benefit; everything fits in one loop.  Stale-frame build-up is
-    // impossible: there is no queue — each iteration produces exactly one JPEG.
-    let tx_render = tx.clone();
-    let shutdown_render = shutdown.clone();
-    tokio::task::spawn_blocking(move || {
-        let start = Instant::now();
-        let mut prev: Option<(wgpu::SubmissionIndex, usize)> = None;
-        let mut frame: usize = 0;
-
-        while !shutdown_render.load(Ordering::Relaxed) {
-            let deadline = Instant::now() + Duration::from_millis(33);
-
-            if tx_render.receiver_count() > 0 {
-                let slot = frame % 2;
-                let rotation = start.elapsed().as_secs_f32() * 0.8;
-                let sub = renderer.submit_frame(rotation, slot);
-
-                // GPU executes frame `slot` while we encode the previous frame.
-                if let Some((prev_sub, prev_slot)) = prev.replace((sub, slot)) {
-                    let jpeg = renderer.readback_and_encode(prev_sub, prev_slot);
-                    let _ = tx_render.send(Bytes::from(jpeg));
-                }
-
-                frame += 1;
-            }
-
-            let now = Instant::now();
-            if now < deadline {
-                std::thread::sleep(deadline - now);
-            }
-        }
-    });
-
-    let addr = "127.0.0.1:8080";
-    println!("Listening on http://{addr}  (Ctrl+C to stop)");
-
-    let server = HttpServer::new(move || {
+    println!("Listening on http://127.0.0.1:8080  (Ctrl+C to stop)");
+    let server = HttpServer::new(|| {
         App::new()
-            .app_data(web::Data::new(tx.clone()))
             .route("/", web::get().to(index))
             .route("/stream", web::get().to(mjpeg_stream))
     })
-    .bind(addr)?
+    .bind("127.0.0.1:8080")?
     .run();
 
     let handle = server.handle();
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
+        tokio::signal::ctrl_c().await.expect("ctrl_c");
         println!("\nShutting down…");
-        shutdown.store(true, Ordering::Relaxed); // unblock the render loop
-        handle.stop(true).await;                 // drain active HTTP connections
+        handle.stop(true).await;
     });
 
     server.await
