@@ -34,4 +34,5 @@ fn main() {
     app.on_quit(|| std::process::exit(0));
 
     app.run().unwrap();
+    std::process::exit(0);
 }
