@@ -1,7 +1,7 @@
 slint::include_modules!();
 
 use std::time::Instant;
-use claude_ui::teapot::TeapotRenderer;
+use ripp::teapot::TeapotRenderer;
 
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;

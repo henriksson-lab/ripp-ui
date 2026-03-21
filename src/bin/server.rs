@@ -10,7 +10,7 @@ slint::include_modules!();
 
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
-use claude_ui::teapot::TeapotRenderer;
+use ripp::teapot::TeapotRenderer;
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
