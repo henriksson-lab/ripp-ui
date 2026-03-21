@@ -44,15 +44,17 @@
       return null; // modifier-only or unknown key — ignore
     }
 
+    let ws = null;
+    function connectWs() {
+      ws = new WebSocket('ws://' + location.host + '/ws');
+      ws.onclose = function() { setTimeout(connectWs, 500); };
+    }
     function sendInput(ev) {
-      fetch('/input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ev),
-      });
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(ev));
     }
 
     window.addEventListener('load', function() {
+      connectWs();
       const img = document.getElementById('stream');
       let viewportW = window.innerWidth;
       let viewportH = window.innerHeight;

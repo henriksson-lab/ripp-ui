@@ -16,7 +16,7 @@ use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferTyp
 use slint::platform::{WindowAdapter, WindowEvent};
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 // Default render dimensions (used until the browser reports its viewport size).
@@ -54,7 +54,7 @@ enum InputEvent {
     KeyReleased      { text: String },
 }
 
-type EventQueue = Arc<Mutex<VecDeque<InputEvent>>>;
+type EventQueue = Arc<(Mutex<VecDeque<InputEvent>>, Condvar)>;
 
 fn to_button(s: &str) -> slint::platform::PointerEventButton {
     match s {
@@ -86,23 +86,23 @@ fn run_render_loop(
         let deadline = Instant::now() + Duration::from_millis(33);
 
         if frame_tx.receiver_count() == 0 {
-            std::thread::sleep(deadline - Instant::now());
+            std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
             continue;
         }
 
-        // Resize Slint window if the browser reported new dimensions.
-        let (new_w, new_h) = *viewport.lock().unwrap();
-        if new_w != w || new_h != h {
-            w = new_w;
-            h = new_h;
-            window.set_size(slint::PhysicalSize::new(w, h));
-            buf.resize((w * h) as usize, Rgb565Pixel::default());
-        }
-
-        // Drain input events from the HTTP thread and dispatch to Slint.
+        // Wait until an input event arrives or the frame deadline is reached,
+        // then drain all queued events. This means input wakes the render loop
+        // immediately rather than waiting up to 33 ms.
         {
-            let mut q = event_queue.lock().unwrap();
-            while let Some(ev) = q.pop_front() {
+            let (lock, cvar) = event_queue.as_ref();
+            let mut guard = lock.lock().unwrap();
+            while guard.is_empty() {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() { break; }
+                let (g, _) = cvar.wait_timeout(guard, remaining).unwrap();
+                guard = g;
+            }
+            for ev in guard.drain(..) {
                 let slint_ev = match ev {
                     InputEvent::PointerMoved { x, y } =>
                         WindowEvent::PointerMoved { position: slint::LogicalPosition::new(x, y) },
@@ -131,6 +131,15 @@ fn run_render_loop(
                 };
                 window.window().dispatch_event(slint_ev);
             }
+        }
+
+        // Resize Slint window if the browser reported new dimensions.
+        let (new_w, new_h) = *viewport.lock().unwrap();
+        if new_w != w || new_h != h {
+            w = new_w;
+            h = new_h;
+            window.set_size(slint::PhysicalSize::new(w, h));
+            buf.resize((w * h) as usize, Rgb565Pixel::default());
         }
 
         slint::platform::update_timers_and_animations();
@@ -186,9 +195,11 @@ fn run_render_loop(
             }
         }
 
-        let now = Instant::now();
-        if now < deadline {
-            std::thread::sleep(deadline - now);
+        // Sleep until the frame deadline or the next input event.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if !remaining.is_zero() {
+            let (lock, cvar) = event_queue.as_ref();
+            let _ = cvar.wait_timeout(lock.lock().unwrap(), remaining);
         }
     }
 }
@@ -231,12 +242,30 @@ async fn set_viewport(
     HttpResponse::NoContent().finish()
 }
 
-async fn post_input(
+/// WebSocket endpoint for input events.
+/// Each browser tab opens one persistent WS connection and sends JSON-encoded
+/// InputEvent messages. This avoids per-event HTTP round-trip overhead.
+async fn ws_input(
+    req: actix_web::HttpRequest,
+    stream: web::Payload,
     queue: web::Data<EventQueue>,
-    event: web::Json<InputEvent>,
-) -> HttpResponse {
-    queue.lock().unwrap().push_back(event.into_inner());
-    HttpResponse::NoContent().finish()
+) -> actix_web::Result<HttpResponse> {
+    let (res, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    let queue = queue.into_inner();
+    actix_web::rt::spawn(async move {
+        use futures::StreamExt;
+        while let Some(Ok(msg)) = msg_stream.next().await {
+            if let actix_ws::Message::Text(text) = msg {
+                if let Ok(event) = serde_json::from_str::<InputEvent>(&text) {
+                    let (lock, cvar) = queue.as_ref().as_ref();
+                    lock.lock().unwrap().push_back(event);
+                    cvar.notify_one();
+                }
+            }
+        }
+        let _ = session.close(None).await;
+    });
+    Ok(res)
 }
 
 /// Each HTTP client subscribes to the broadcast channel and streams JPEG frames.
@@ -273,7 +302,7 @@ fn main() {
     let show_fps = std::env::args().any(|a| a == "--fps");
 
     let viewport: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
-    let event_queue: EventQueue = Arc::new(Mutex::new(VecDeque::new()));
+    let event_queue: EventQueue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
 
     // Set up headless Slint software-renderer platform on the main thread.
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
@@ -303,7 +332,7 @@ fn main() {
                     .route("/",        web::get().to(index))
                     .route("/stream",  web::get().to(mjpeg_stream))
                     .route("/viewport",web::get().to(set_viewport))
-                    .route("/input",   web::post().to(post_input))
+                    .route("/ws",      web::get().to(ws_input))
             })
             .bind("127.0.0.1:8080")
             .expect("bind failed")
