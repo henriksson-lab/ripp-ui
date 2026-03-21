@@ -311,7 +311,16 @@ fn main() {
         .expect("Slint platform already initialised");
 
     let ui = AppWindow::new().unwrap();
-    ui.on_quit(|| {});
+    ui.set_server_mode(true);
+
+    let files: Vec<slint::SharedString> = std::fs::read_dir(".")
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string().into())
+        .collect();
+    ui.set_file_list(std::rc::Rc::new(slint::VecModel::from(files)).into());
+    ui.on_quit(|| std::process::exit(0));
 
     let (frame_tx, _) = tokio::sync::broadcast::channel::<Vec<u8>>(4);
     let frame_tx = Arc::new(frame_tx);
@@ -323,7 +332,7 @@ fn main() {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.block_on(async move {
-            println!("Listening on http://127.0.0.1:8080  (Ctrl+C to stop)");
+            println!("RIPP server listening on http://127.0.0.1:8080  (Ctrl+C to stop)");
             let server = HttpServer::new(move || {
                 App::new()
                     .app_data(web::Data::new(frame_tx_http.clone()))

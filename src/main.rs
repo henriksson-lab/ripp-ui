@@ -9,6 +9,14 @@ const TEAPOT_H: u32 = 400;
 fn main() {
     let app = AppWindow::new().unwrap();
 
+    let files: Vec<slint::SharedString> = std::fs::read_dir(".")
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string().into())
+        .collect();
+    app.set_file_list(std::rc::Rc::new(slint::VecModel::from(files)).into());
+
     // Headless wgpu teapot renderer
     let renderer = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
     let start    = Instant::now();
