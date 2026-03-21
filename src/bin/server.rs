@@ -152,7 +152,7 @@ fn run_render_loop(
             })
             .collect();
 
-        let jpeg = encode_jpeg(&rgb, w, h);
+        let jpeg = encode_png(&rgb, w, h);
         let _    = frame_tx.send(jpeg);
 
         let now = Instant::now();
@@ -162,15 +162,18 @@ fn run_render_loop(
     }
 }
 
-// ── JPEG encoding ─────────────────────────────────────────────────────────────
+// ── PNG encoding ──────────────────────────────────────────────────────────────
 
-fn encode_jpeg(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
-    let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
-    comp.set_size(w as usize, h as usize);
-    comp.set_quality(82.0);
-    let mut comp = comp.start_compress(Vec::new()).expect("mozjpeg start");
-    comp.write_scanlines(rgb).expect("mozjpeg write");
-    comp.finish().expect("mozjpeg finish")
+fn encode_png(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, w, h);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.set_compression(png::Compression::Fast);
+    enc.set_filter(png::FilterType::NoFilter);
+    enc.write_header().unwrap()
+        .write_image_data(rgb).unwrap();
+    out
 }
 
 // ── HTTP handlers ──────────────────────────────────────────────────────────
@@ -219,7 +222,7 @@ async fn mjpeg_stream(
             }
         };
         let header = format!(
-            "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+            "--frame\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
             jpeg.len()
         );
         let mut frame = Vec::with_capacity(header.len() + jpeg.len() + 2);

@@ -13,7 +13,7 @@ tobj     = { version = "4" }
 actix-web = "4"
 bytes     = "1"
 futures   = "0.3"
-mozjpeg   = "0.10"
+png       = "0.17"
 serde     = { version = "1", features = ["derive"] }
 tokio     = { version = "1", features = ["rt-multi-thread", "signal", "sync"] }
 wgpu      = "0.19"
