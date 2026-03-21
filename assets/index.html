@@ -18,12 +18,116 @@
 <body>
   <img id="stream" alt="">
   <script>
-    function reconnect() {
-      var w = window.innerWidth, h = window.innerHeight;
-      document.getElementById('stream').src = '/stream?w=' + w + '&h=' + h;
+    // Map browser KeyboardEvent.key to Slint key codes.
+    const SLINT_KEYS = {
+      'Backspace':  '\u0008',
+      'Tab':        '\u0009',
+      'Enter':      '\u000a',
+      'Escape':     '\u001b',
+      'Delete':     '\u007f',
+      'ArrowUp':    '\uF700',
+      'ArrowDown':  '\uF701',
+      'ArrowLeft':  '\uF702',
+      'ArrowRight': '\uF703',
+      'F1':  '\uF704', 'F2':  '\uF705', 'F3':  '\uF706', 'F4':  '\uF707',
+      'F5':  '\uF708', 'F6':  '\uF709', 'F7':  '\uF70A', 'F8':  '\uF70B',
+      'F9':  '\uF70C', 'F10': '\uF70D', 'F11': '\uF70E', 'F12': '\uF70F',
+      'Home':     '\uF729',
+      'End':      '\uF72B',
+      'PageUp':   '\uF72C',
+      'PageDown': '\uF72D',
+    };
+
+    function slintKey(key) {
+      if (key in SLINT_KEYS) return SLINT_KEYS[key];
+      if (key.length === 1) return key;
+      return null; // modifier-only or unknown key — ignore
     }
-    window.addEventListener('load', reconnect);
-    window.addEventListener('resize', reconnect);
+
+    function sendInput(ev) {
+      fetch('/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ev),
+      });
+    }
+
+    window.addEventListener('load', function() {
+      const img = document.getElementById('stream');
+      let viewportW = window.innerWidth;
+      let viewportH = window.innerHeight;
+
+      function reportViewport() {
+        viewportW = window.innerWidth;
+        viewportH = window.innerHeight;
+        fetch('/viewport?w=' + viewportW + '&h=' + viewportH);
+      }
+      reportViewport();
+      img.src = '/stream';
+      window.addEventListener('resize', reportViewport);
+
+      // Scale CSS pixel coordinates to Slint logical pixels.
+      function pos(e) {
+        const r = img.getBoundingClientRect();
+        return {
+          x: (e.clientX - r.left) / r.width  * viewportW,
+          y: (e.clientY - r.top)  / r.height * viewportH,
+        };
+      }
+
+      function buttonName(e) {
+        return ['left', 'middle', 'right'][e.button] || 'left';
+      }
+
+      // Throttle mouse-move: send at most one event per animation frame.
+      let pendingMove = null;
+      img.addEventListener('mousemove', function(e) {
+        const p = pos(e);
+        if (pendingMove === null) {
+          requestAnimationFrame(function() {
+            sendInput({ type: 'pointer_moved', x: pendingMove.x, y: pendingMove.y });
+            pendingMove = null;
+          });
+        }
+        pendingMove = p;
+      });
+
+      img.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        const p = pos(e);
+        sendInput({ type: 'pointer_pressed', x: p.x, y: p.y, button: buttonName(e) });
+      });
+
+      img.addEventListener('mouseup', function(e) {
+        const p = pos(e);
+        sendInput({ type: 'pointer_released', x: p.x, y: p.y, button: buttonName(e) });
+      });
+
+      img.addEventListener('mouseleave', function() {
+        sendInput({ type: 'pointer_exited' });
+      });
+
+      img.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const p = pos(e);
+        sendInput({ type: 'pointer_scrolled', x: p.x, y: p.y, delta_x: -e.deltaX, delta_y: -e.deltaY });
+      }, { passive: false });
+
+      document.addEventListener('keydown', function(e) {
+        const text = slintKey(e.key);
+        if (text !== null) {
+          e.preventDefault();
+          sendInput({ type: 'key_pressed', text });
+        }
+      });
+
+      document.addEventListener('keyup', function(e) {
+        const text = slintKey(e.key);
+        if (text !== null) {
+          sendInput({ type: 'key_released', text });
+        }
+      });
+    });
   </script>
 </body>
 </html>
