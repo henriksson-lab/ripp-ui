@@ -73,14 +73,22 @@ fn run_render_loop(
     frame_tx: Arc<tokio::sync::broadcast::Sender<Vec<u8>>>,
     viewport: Arc<Mutex<(u32, u32)>>,
     event_queue: EventQueue,
+    show_fps: bool,
 ) {
     let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
     let start  = Instant::now();
     let (mut w, mut h) = *viewport.lock().unwrap();
     let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
+    let mut last_print  = Instant::now();
+    let mut frame_count = 0u32;
 
     loop {
         let deadline = Instant::now() + Duration::from_millis(33);
+
+        if frame_tx.receiver_count() == 0 {
+            std::thread::sleep(deadline - Instant::now());
+            continue;
+        }
 
         // Resize Slint window if the browser reported new dimensions.
         let (new_w, new_h) = *viewport.lock().unwrap();
@@ -128,19 +136,22 @@ fn run_render_loop(
         slint::platform::update_timers_and_animations();
 
         let rotation = start.elapsed().as_secs_f32() * 0.8;
+        let t0 = Instant::now();
 
         // 1. Render teapot → Slint image property (Slint scales it in layout).
         let pixels = teapot.render_frame(rotation);
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
         pb.make_mut_bytes().copy_from_slice(&pixels);
         ui.set_teapot_image(slint::Image::from_rgba8(pb));
+        let t1 = Instant::now();
 
         // 2. Render full Slint UI to RGB565 buffer.
         window.draw_if_needed(|renderer| {
             renderer.render(&mut buf, w as usize);
         });
+        let t2 = Instant::now();
 
-        // 3. Expand RGB565 → RGB888 for JPEG encoding.
+        // 3. Expand RGB565 → RGB888 for PNG encoding.
         let rgb: Vec<u8> = buf
             .iter()
             .flat_map(|p| {
@@ -151,9 +162,29 @@ fn run_render_loop(
                 [r, g, b]
             })
             .collect();
+        let t3 = Instant::now();
 
-        let jpeg = encode_png(&rgb, w, h);
-        let _    = frame_tx.send(jpeg);
+        let frame = encode_png(&rgb, w, h);
+        let t4 = Instant::now();
+
+        let _ = frame_tx.send(frame);
+
+        if show_fps {
+            frame_count += 1;
+            if t4.duration_since(last_print) >= Duration::from_secs(1) {
+                println!(
+                    "fps={:2}  teapot={:4}ms  slint={:4}ms  expand={:3}ms  png={:4}ms  total={:4}ms",
+                    frame_count,
+                    t1.duration_since(t0).as_millis(),
+                    t2.duration_since(t1).as_millis(),
+                    t3.duration_since(t2).as_millis(),
+                    t4.duration_since(t3).as_millis(),
+                    t4.duration_since(t0).as_millis(),
+                );
+                frame_count = 0;
+                last_print  = t4;
+            }
+        }
 
         let now = Instant::now();
         if now < deadline {
@@ -239,6 +270,8 @@ async fn mjpeg_stream(
 // ── Main ───────────────────────────────────────────────────────────────────
 
 fn main() {
+    let show_fps = std::env::args().any(|a| a == "--fps");
+
     let viewport: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
     let event_queue: EventQueue = Arc::new(Mutex::new(VecDeque::new()));
 
@@ -289,5 +322,5 @@ fn main() {
     });
 
     // Main thread: Slint render loop. Runs until the process is killed.
-    run_render_loop(ui, window, frame_tx, viewport, event_queue);
+    run_render_loop(ui, window, frame_tx, viewport, event_queue, show_fps);
 }

@@ -1,4 +1,4 @@
 local:
-	cargo run --bin claude-ui
+	cargo run --release --bin claude-ui
 server:
-	cargo run --bin server
+	cargo run --release --bin server
