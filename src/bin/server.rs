@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const MENUBAR_H: u32 = 36;
 
 // ── GPU data types ─────────────────────────────────────────────────────────
 #[repr(C)]
@@ -227,9 +228,11 @@ impl Renderer {
     }
 
     fn submit_frame(&self, rotation: f32, slot: usize) -> wgpu::SubmissionIndex {
+        let teapot_w = self.w / 2;
+        let teapot_h = self.h.saturating_sub(MENUBAR_H).max(1);
         let proj = Mat4::perspective_rh(
             std::f32::consts::FRAC_PI_4,
-            self.w as f32 / self.h as f32,
+            teapot_w as f32 / teapot_h as f32,
             0.1,
             100.0,
         );
@@ -252,7 +255,7 @@ impl Renderer {
                     view: &self.target_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.15, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.102, g: 0.102, b: 0.180, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -267,6 +270,11 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            pass.set_viewport(
+                (self.w / 2) as f32, MENUBAR_H as f32,
+                (self.w / 2) as f32, teapot_h as f32,
+                0.0, 1.0,
+            );
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, self.vbuf.slice(..));
@@ -302,10 +310,23 @@ impl Renderer {
         rx.recv().unwrap().unwrap();
 
         let mapped = slice.get_mapped_range();
-        let jpeg = encode_jpeg(&*mapped, self.w, self.h, self.bpr);
+        let mut pixels = mapped.to_vec();
         drop(mapped);
         buf.unmap();
-        jpeg
+
+        // Composite menubar strip over the top rows
+        for row in 0..MENUBAR_H as usize {
+            let row_start = row * self.bpr as usize;
+            for col in 0..self.w as usize {
+                let px = row_start + col * 4;
+                pixels[px]     = 0x2B;
+                pixels[px + 1] = 0x2B;
+                pixels[px + 2] = 0x2B;
+                pixels[px + 3] = 0xFF;
+            }
+        }
+
+        encode_jpeg(&pixels, self.w, self.h, self.bpr)
     }
 }
 

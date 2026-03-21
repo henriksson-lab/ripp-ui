@@ -1,57 +1,37 @@
-use iced::{Element, Subscription, Task, Length};
-use iced::widget::{row, container, text, shader::Shader};
-use std::time::{Duration, Instant};
-mod teapot;
+slint::include_modules!();
 
-fn main() -> iced::Result {
-    iced::application("Hello Teapot", App::update, App::view)
-        .subscription(App::subscription)
-        .run()
-}
+use std::time::Instant;
+use claude_ui::teapot::TeapotRenderer;
 
-struct App {
-    scene: teapot::Scene,
-    start: Instant,
-}
+const TEAPOT_W: u32 = 480;
+const TEAPOT_H: u32 = 400;
 
-impl Default for App {
-    fn default() -> Self {
-        Self { scene: teapot::Scene::new(), start: Instant::now() }
-    }
-}
+fn main() {
+    let app = AppWindow::new().unwrap();
 
-#[derive(Debug, Clone)]
-enum Message {
-    Tick(Instant),
-}
+    // Headless wgpu teapot renderer
+    let renderer = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
+    let start    = Instant::now();
+    let app_weak = app.as_weak();
 
-impl App {
-    fn update(&mut self, msg: Message) -> Task<Message> {
-        match msg {
-            Message::Tick(now) => {
-                let elapsed = now.duration_since(self.start).as_secs_f32();
-                self.scene.rotation = elapsed * 0.8; // radians/second
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(16),
+        move || {
+            let rotation = start.elapsed().as_secs_f32() * 0.8;
+            let pixels   = renderer.render_frame(rotation);
+
+            let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
+            pb.make_mut_bytes().copy_from_slice(&pixels);
+
+            if let Some(ui) = app_weak.upgrade() {
+                ui.set_teapot_image(slint::Image::from_rgba8(pb));
             }
-        }
-        Task::none()
-    }
+        },
+    );
 
-    fn view(&self) -> Element<'_, Message> {
-        row![
-            // Left pane: hello world label
-            container(text("Hello World").size(32))
-                .center(Length::Fill),
+    app.on_quit(|| std::process::exit(0));
 
-            // Right pane: rotating teapot
-            Shader::new(self.scene.clone())
-                .width(Length::Fill)
-                .height(Length::Fill),
-        ]
-        .into()
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        // Fire ~60 times/second to drive rotation
-        iced::time::every(Duration::from_millis(16)).map(Message::Tick)
-    }
+    app.run().unwrap();
 }

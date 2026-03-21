@@ -5,62 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Teapot — Server-Side Rendering</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html, body {
-      width: 100%; height: 100%;
-    }
-
-    body {
-      background: #1a1a2e;
-      display: flex;
-      flex-direction: row;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    #left {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #left span {
-      color: white;
-      font-family: system-ui, sans-serif;
-      font-size: 32px;
-    }
-
-    #right {
-      flex: 1;
-      display: flex;
-      align-items: stretch;
-    }
-
-    #right img {
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #1a1a2e; }
+    img#stream {
       display: block;
       width: 100%;
-      height: 100%;
+      height: 100vh;
       object-fit: fill;
     }
   </style>
 </head>
 <body>
-  <div id="left">
-    <span>Hello World</span>
-  </div>
-  <div id="right">
-    <img id="stream" alt="live teapot stream">
-  </div>
-
+  <img id="stream" alt="">
   <script>
     function reconnect() {
-      var img = document.getElementById('stream');
-      var right = document.getElementById('right');
-      var w = right.clientWidth;
-      var h = right.clientHeight;
-      img.src = '/stream?w=' + w + '&h=' + h;
+      var w = window.innerWidth, h = window.innerHeight;
+      document.getElementById('stream').src = '/stream?w=' + w + '&h=' + h;
     }
     window.addEventListener('load', reconnect);
     window.addEventListener('resize', reconnect);

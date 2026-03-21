@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iced     = { version = "0.13", features = ["wgpu", "tokio"] }
+slint    = "1"
 glam     = "0.29"
 bytemuck = { version = "1.16", features = ["derive"] }
 tobj     = { version = "4" }
@@ -17,3 +17,6 @@ mozjpeg   = "0.10"
 serde     = { version = "1", features = ["derive"] }
 tokio     = { version = "1", features = ["rt-multi-thread", "signal", "sync"] }
 wgpu      = "0.19"
+
+[build-dependencies]
+slint-build = "1"
