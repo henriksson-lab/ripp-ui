@@ -6,47 +6,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make local        # run the desktop app (Slint GUI)
-make server       # run the web server (MJPEG stream at http://127.0.0.1:8080)
+make server       # run the web server (stream at http://127.0.0.1:8080)
 
-cargo build --bin claude-ui   # build desktop app only
-cargo build --bin server      # build web server only
-cargo build                   # build both
+cargo build --bin ripp    # build desktop app only
+cargo build --bin server  # build web server only
+cargo build               # build both
 ```
 
 There are no tests.
 
 ## Architecture
 
-Two independent binaries share the `claude-ui` crate:
+**RIPP** (Rust Imaging Processing Platform) is two binaries from one crate (`ripp`):
 
-### `src/main.rs` — desktop app (`claude-ui` binary)
-Built with **Slint 1.x**. Renders a two-pane layout: "Hello World" text on the left, a rotating teapot on the right.
+### `src/main.rs` — desktop app (`ripp` binary)
+Built with **Slint 1.x**. The UI is defined in `ui/app.slint`, compiled at build time by `build.rs` via `slint-build`, and accessed in Rust via `slint::include_modules!()`.
 
-The UI is defined in **`ui/app.slint`** and compiled into Rust by `build.rs` via `slint-build`. Rust code accesses the generated `AppWindow` struct via `slint::include_modules!()`.
+Layout: left pane split vertically — top half shows "Hello World" and live mouse coordinates (tracked via a `TouchArea`); bottom half is a scrollable `ListView` of the current directory populated at startup. Right pane shows a rotating teapot rendered offscreen by `TeapotRenderer` and pushed into Slint as a `SharedPixelBuffer<Rgba8Pixel>` every 16 ms via a `slint::Timer`.
 
-The teapot is rendered offscreen with wgpu each frame (via `TeapotRenderer`) and pushed into Slint as a `slint::Image` (`SharedPixelBuffer<Rgba8Pixel>`) on a 16 ms timer.
-
-Menubar dropdowns and the About modal are implemented inside the .slint file using `private property <bool>` state and conditional `if` elements with explicit `z` ordering:
-- `z: 0` — main VerticalLayout
-- `z: 1` — full-window dismiss `TouchArea` (shown when any dropdown is open)
-- `z: 2` — dropdown `Rectangle` positioned at `y: 36px` (below menubar)
-- `z: 10/11` — About backdrop and dialog
+Dropping `TeapotRenderer` hangs (wgpu cleanup deadlock), so both exit paths call `std::process::exit(0)`.
 
 ### `src/bin/server.rs` — web server (`server` binary)
-Headless wgpu renderer (no Slint) that renders the teapot to an offscreen texture, encodes each frame as JPEG via mozjpeg, and streams them as `multipart/x-mixed-replace` MJPEG over HTTP (actix-web). Serves `assets/index.html` at `/` and the stream at `/stream?w=N&h=N`.
+Uses **Slint's headless software renderer** (`MinimalSoftwareWindow` / `Rgb565Pixel`) on the main thread — the same `AppWindow` from `ui/app.slint` with `server_mode = true`. Each frame: renders the teapot via `TeapotRenderer`, pushes it into Slint as an image property, renders the full UI to an RGB565 buffer, expands to RGB888, encodes as PNG, and broadcasts over a `tokio::sync::broadcast` channel.
+
+actix-web runs on a background thread. Endpoints: `/` (index.html), `/stream` (multipart PNG stream), `/viewport` (resize), `/ws` (WebSocket input). Browser mouse/keyboard events are forwarded to Slint via the WebSocket → `VecDeque<InputEvent>` → `window.dispatch_event()`.
+
+The File menu shows "Shut down server" instead of "Quit" when `server_mode` is true (set in `server.rs`, default false in `main.rs`).
 
 ### `src/teapot.rs`
-Standalone wgpu offscreen teapot renderer used by the desktop app. `TeapotRenderer::new(w, h)` initialises wgpu and loads `assets/teapot.obj`. `render_frame(rotation)` renders one frame synchronously and returns destrided RGBA8 bytes.
-
-The server binary has its own inline copy of equivalent pipeline code.
+Shared wgpu offscreen renderer. `TeapotRenderer::new(w, h)` initialises wgpu and loads `assets/teapot.obj`. `render_frame(rotation)` submits a render pass and does a blocking readback via `map_async` + `device.poll`, returning destrided `Vec<u8>` (RGBA8, `w*h*4` bytes).
 
 ### `ui/app.slint`
-Slint UI definition for the desktop app. Compiled at build time by `build.rs`.
-
-### `build.rs`
-Compiles `ui/app.slint` → Rust via `slint_build::compile`.
+Single source of truth for the UI, used by both binaries. Key properties set from Rust: `teapot-image`, `server-mode`, `file-list`. Menubar dropdowns and About dialog are pure Slint using `private property <bool>` state and `z`-layered `if` elements (z: 1 dismiss overlay, z: 2 dropdowns, z: 10/11 About backdrop and dialog).
 
 ### `assets/`
-- `teapot.obj` — mesh loaded at runtime by both binaries
-- `shaders/teapot.wgsl` — wgsl shader used by both binaries
-- `index.html` — served by the web server; contains its own HTML/CSS/JS menubar mirroring the desktop app's
+- `teapot.obj` — mesh loaded at runtime
+- `shaders/teapot.wgsl` — WGSL shader used by both binaries
+- `index.html` — served by the web server; forwards input events over WebSocket
