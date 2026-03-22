@@ -1,5 +1,10 @@
 import { ListView } from "std-widgets.slint";
 
+struct FileEntry {
+    name: string,
+    is-dir: bool,
+}
+
 export component AppWindow inherits Window {
     title: "RIPP — Rust Imaging Processing Platform";
     min-width: 640px;
@@ -14,10 +19,14 @@ export component AppWindow inherits Window {
     private property <bool> about-open: false;
 
     in property <bool> server-mode: false;
-    in property <[string]> file-list;
+    in property <[FileEntry]> file-list;
+    in property <string> current-path: ".";
 
-    // Only action that needs Rust
+    // Only actions that need Rust
     callback quit();
+    callback navigate-to(string);
+
+    private property <int> active-tab: 0;  // 0=Files, 1=Plots, 2=Help
 
     // ── Main layout ──────────────────────────────────────────────────────────
     VerticalLayout {
@@ -81,59 +90,174 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 horizontal-stretch: 1;
 
-                // Top: Hello World
+                // Top: Current tool
                 Rectangle {
                     vertical-stretch: 1;
                     background: #1A1A1A;
 
-                    left-mouse := TouchArea {
-                        width: parent.width;
-                        height: parent.height;
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 12px;
-
-                        Text {
-                            text: "Hello World";
-                            color: white;
-                            font-size: 32px;
-                            horizontal-alignment: center;
-                        }
-                        Text {
-                            text: "x: " + Math.round(left-mouse.mouse-x / 1px) + "  y: " + Math.round(left-mouse.mouse-y / 1px);
-                            color: #AAAAAA;
-                            font-size: 14px;
-                            horizontal-alignment: center;
-                        }
+                    Text {
+                        text: "Current tool here";
+                        color: white;
+                        font-size: 32px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                     }
                 }
 
                 // Divider
                 Rectangle { height: 1px; background: #444444; }
 
-                // Bottom: file list
-                Rectangle {
+                // Bottom: tabbed panel
+                VerticalLayout {
                     vertical-stretch: 1;
-                    background: #111111;
-                    clip: true;
 
-                    ListView {
-                        width: parent.width;
-                        height: parent.height;
-                        for name in root.file-list: Rectangle {
-                            height: 22px;
-                            background: transparent;
-                            Text {
-                                x: 8px;
-                                text: name;
-                                color: #CCCCCC;
-                                font-size: 13px;
-                                vertical-alignment: center;
-                                height: parent.height;
+                    // Tab bar
+                    Rectangle {
+                        height: 28px;
+                        background: #222222;
+                        HorizontalLayout {
+                            spacing: 0px;
+                            alignment: start;
+
+                            Rectangle {
+                                width: 60px;
+                                height: 28px;
+                                background: root.active-tab == 0 ? #3A3A3A : #222222;
+                                tab0-btn := TouchArea { clicked => { root.active-tab = 0; } }
+                                Text {
+                                    text: "Files";
+                                    color: white;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle {
+                                width: 60px;
+                                height: 28px;
+                                background: root.active-tab == 1 ? #3A3A3A : #222222;
+                                tab1-btn := TouchArea { clicked => { root.active-tab = 1; } }
+                                Text {
+                                    text: "Plots";
+                                    color: white;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle {
+                                width: 60px;
+                                height: 28px;
+                                background: root.active-tab == 2 ? #3A3A3A : #222222;
+                                tab2-btn := TouchArea { clicked => { root.active-tab = 2; } }
+                                Text {
+                                    text: "Help";
+                                    color: white;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
+                    }
+
+                    // Files tab
+                    if root.active-tab == 0: VerticalLayout {
+                        vertical-stretch: 1;
+
+                        // Path bar
+                        Rectangle {
+                            height: 26px;
+                            background: #1E1E1E;
+                            HorizontalLayout {
+                                padding-left: 4px;
+                                padding-right: 4px;
+                                spacing: 4px;
+
+                                // Up button
+                                Rectangle {
+                                    width: 28px;
+                                    background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
+                                    border-radius: 3px;
+                                    up-btn := TouchArea {
+                                        clicked => { root.navigate-to(".."); }
+                                    }
+                                    Text {
+                                        text: "↑";
+                                        color: #AAAAAA;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Text {
+                                    text: root.current-path;
+                                    color: #AAAAAA;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: #333333; }
+
+                        // File list
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: #111111;
+                            clip: true;
+
+                            ListView {
+                                width: parent.width;
+                                height: parent.height;
+                                for entry in root.file-list: Rectangle {
+                                    height: 22px;
+                                    background: entry-area.has-hover && entry.is-dir ? #1E1E1E : transparent;
+                                    entry-area := TouchArea {
+                                        clicked => {
+                                            if (entry.is-dir) {
+                                                root.navigate-to(entry.name);
+                                            }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        x: 8px;
+                                        width: parent.width - 8px;
+                                        spacing: 4px;
+                                        alignment: start;
+                                        Text {
+                                            text: entry.is-dir ? "▶" : " ";
+                                            color: #6699CC;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            width: 12px;
+                                        }
+                                        Text {
+                                            text: entry.name;
+                                            color: entry.is-dir ? #9ABFDD : #CCCCCC;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                            height: parent.height;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Plots tab
+                    if root.active-tab == 1: Rectangle {
+                        vertical-stretch: 1;
+                        background: #111111;
+                    }
+
+                    // Help tab
+                    if root.active-tab == 2: Rectangle {
+                        vertical-stretch: 1;
+                        background: #111111;
                     }
                 }
             }

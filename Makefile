@@ -1,4 +1,4 @@
 local:
-	cargo run --release --bin claude-ui
+	cargo run --release --bin ripp
 server:
-	cargo run --release --bin server
+	cargo run --release --bin ripp-server

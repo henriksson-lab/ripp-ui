@@ -20,5 +20,9 @@ serde     = { version = "1", features = ["derive"] }
 tokio     = { version = "1", features = ["rt-multi-thread", "signal", "sync"] }
 wgpu      = "0.19"
 
+[[bin]]
+name = "ripp-server"
+path = "src/bin/ripp_server.rs"
+
 [build-dependencies]
 slint-build = "1"
