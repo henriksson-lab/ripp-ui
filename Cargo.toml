@@ -3,7 +3,12 @@ name = "ripp"
 version = "0.1.0"
 edition = "2021"
 
+license = "MIT"
+homepage = "https://www.henlab.org/"
+repository = "https://github.com/henriksson-lab/ripp-ui"
+
 [dependencies]
+micromanager = "*"
 slint    = "1"
 glam     = "0.29"
 bytemuck = { version = "1.16", features = ["derive"] }

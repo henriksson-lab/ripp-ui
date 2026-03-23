@@ -1,8 +1,8 @@
-import { ListView } from "std-widgets.slint";
 
 struct FileEntry {
     name: string,
     is-dir: bool,
+    size: string,
 }
 
 export component AppWindow inherits Window {
@@ -12,6 +12,7 @@ export component AppWindow inherits Window {
 
     // Set by Rust each frame
     in property <image> teapot-image;
+    in property <image> camera-image;
 
     // Internal UI state
     private property <bool> file-menu-open: false;
@@ -26,7 +27,8 @@ export component AppWindow inherits Window {
     callback quit();
     callback navigate-to(string);
 
-    private property <int> active-tab: 0;  // 0=Files, 1=Plots, 2=Help
+    private property <int> active-tab: 0;      // 0=Files, 1=Plots, 2=Help
+    private property <int> active-left-tab: 0; // 0=3D View, 1=Camera
 
     // ── Main layout ──────────────────────────────────────────────────────────
     VerticalLayout {
@@ -86,7 +88,63 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             vertical-stretch: 1;
 
-            // Left pane: split vertically
+            // Left pane: tabbed
+            VerticalLayout {
+                horizontal-stretch: 1;
+
+                // Tab bar
+                Rectangle {
+                    height: 28px;
+                    background: #222222;
+                    HorizontalLayout {
+                        spacing: 0px;
+                        alignment: start;
+
+                        Rectangle {
+                            width: 70px;
+                            height: 28px;
+                            background: root.active-left-tab == 0 ? #3A3A3A : #222222;
+                            ltab0-btn := TouchArea { clicked => { root.active-left-tab = 0; } }
+                            Text {
+                                text: "3D View";
+                                color: white;
+                                font-size: 13px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Rectangle {
+                            width: 70px;
+                            height: 28px;
+                            background: root.active-left-tab == 1 ? #3A3A3A : #222222;
+                            ltab1-btn := TouchArea { clicked => { root.active-left-tab = 1; } }
+                            Text {
+                                text: "Camera";
+                                color: white;
+                                font-size: 13px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 3D View tab
+                if root.active-left-tab == 0: Image {
+                    source: root.teapot-image;
+                    vertical-stretch: 1;
+                    image-fit: fill;
+                }
+
+                // Camera tab
+                if root.active-left-tab == 1: Image {
+                    source: root.camera-image;
+                    vertical-stretch: 1;
+                    image-fit: contain;
+                }
+            }
+
+            // Right pane: split vertically
             VerticalLayout {
                 horizontal-stretch: 1;
 
@@ -203,46 +261,102 @@ export component AppWindow inherits Window {
 
                         Rectangle { height: 1px; background: #333333; }
 
-                        // File list
+                        // Table header
+                        Rectangle {
+                            height: 20px;
+                            background: #000000;
+                            HorizontalLayout {
+                                padding-left: 24px;  // 8px margin + 12px icon + 4px gap
+                                padding-right: 4px;
+                                Text {
+                                    text: "Name";
+                                    color: #888888;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: "Size";
+                                    color: #888888;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                    width: 72px;
+                                    horizontal-alignment: right;
+                                }
+                            }
+                        }
+                        Rectangle { height: 1px; background: #2A2A2A; }
+
+                        // File list with custom scrollbar (Flickable avoids native frame)
                         Rectangle {
                             vertical-stretch: 1;
-                            background: #111111;
+                            background: #000000;
                             clip: true;
 
-                            ListView {
-                                width: parent.width;
+                            file-flick := Flickable {
+                                width: parent.width - 8px;
                                 height: parent.height;
-                                for entry in root.file-list: Rectangle {
-                                    height: 22px;
-                                    background: entry-area.has-hover && entry.is-dir ? #1E1E1E : transparent;
-                                    entry-area := TouchArea {
-                                        clicked => {
-                                            if (entry.is-dir) {
-                                                root.navigate-to(entry.name);
+                                viewport-height: file-entries.preferred-height;
+
+                                file-entries := VerticalLayout {
+                                    for entry in root.file-list: Rectangle {
+                                        height: 22px;
+                                        background: entry-area.has-hover ? #1E1E1E : #000000;
+                                        entry-area := TouchArea {
+                                            clicked => {
+                                                if (entry.is-dir) {
+                                                    root.navigate-to(entry.name);
+                                                }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 4px;
+                                            spacing: 4px;
+                                            Text {
+                                                text: entry.is-dir ? "▶" : " ";
+                                                color: #6699CC;
+                                                font-size: 11px;
+                                                vertical-alignment: center;
+                                                width: 12px;
+                                            }
+                                            Text {
+                                                text: entry.name;
+                                                color: entry.is-dir ? #9ABFDD : #CCCCCC;
+                                                font-size: 13px;
+                                                vertical-alignment: center;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                            Text {
+                                                text: entry.size;
+                                                color: #777777;
+                                                font-size: 12px;
+                                                vertical-alignment: center;
+                                                width: 72px;
+                                                horizontal-alignment: right;
                                             }
                                         }
                                     }
-                                    HorizontalLayout {
-                                        x: 8px;
-                                        width: parent.width - 8px;
-                                        spacing: 4px;
-                                        alignment: start;
-                                        Text {
-                                            text: entry.is-dir ? "▶" : " ";
-                                            color: #6699CC;
-                                            font-size: 11px;
-                                            vertical-alignment: center;
-                                            width: 12px;
-                                        }
-                                        Text {
-                                            text: entry.name;
-                                            color: entry.is-dir ? #9ABFDD : #CCCCCC;
-                                            font-size: 13px;
-                                            vertical-alignment: center;
-                                            height: parent.height;
-                                            overflow: elide;
-                                        }
-                                    }
+                                }
+                            }
+
+                            // Custom scrollbar track
+                            Rectangle {
+                                x: parent.width - 6px;
+                                width: 6px;
+                                height: parent.height;
+                                background: #111111;
+
+                                // Thumb — only visible when content overflows
+                                Rectangle {
+                                    visible: file-flick.viewport-height > file-flick.height;
+                                    width: 4px;
+                                    x: 1px;
+                                    y: (-file-flick.viewport-y / file-flick.viewport-height) * parent.height;
+                                    height: max(20px, (file-flick.height / file-flick.viewport-height) * parent.height);
+                                    background: #555555;
+                                    border-radius: 2px;
                                 }
                             }
                         }
@@ -262,12 +376,6 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Right pane: teapot
-            Image {
-                source: root.teapot-image;
-                horizontal-stretch: 1;
-                image-fit: fill;
-            }
         }
     }
 

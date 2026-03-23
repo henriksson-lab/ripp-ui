@@ -5,18 +5,41 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 use ripp::teapot::TeapotRenderer;
+use micromanager::CMMCore;
+use micromanager::adapters::demo::DemoAdapter;
 
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;
+
+fn fmt_size(bytes: u64) -> String {
+    if bytes < 1_000 {
+        format!("{} B", bytes)
+    } else if bytes < 1_000_000 {
+        format!("{:.1} KB", bytes as f64 / 1_000.0)
+    } else if bytes < 1_000_000_000 {
+        format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+    } else {
+        format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
+    }
+}
 
 fn load_dir(path: &std::path::Path) -> Vec<FileEntry> {
     let mut entries: Vec<FileEntry> = std::fs::read_dir(path)
         .into_iter()
         .flatten()
         .filter_map(|e| e.ok())
-        .map(|e| FileEntry {
-            name: e.file_name().to_string_lossy().to_string().into(),
-            is_dir: e.file_type().map(|t| t.is_dir()).unwrap_or(false),
+        .map(|e| {
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let size = if is_dir {
+                "—".into()
+            } else {
+                e.metadata().map(|m| fmt_size(m.len())).unwrap_or_default().into()
+            };
+            FileEntry {
+                name: e.file_name().to_string_lossy().to_string().into(),
+                is_dir,
+                size,
+            }
         })
         .collect();
     entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
@@ -73,6 +96,27 @@ fn main() {
             }
         },
     );
+
+    // Snap one image from the demo camera
+    let mut core = CMMCore::new();
+    core.register_adapter(Box::new(DemoAdapter));
+    core.load_device("Camera", "demo", "DCamera").unwrap();
+    core.initialize_device("Camera").unwrap();
+    core.set_camera_device("Camera").unwrap();
+    core.snap_image().unwrap();
+    let frame = core.get_image().unwrap();
+
+    let w = frame.width;
+    let h = frame.height;
+    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+    let dst = pb.make_mut_bytes();
+    for (i, &g) in frame.data.iter().enumerate() {
+        dst[i * 4]     = g;
+        dst[i * 4 + 1] = g;
+        dst[i * 4 + 2] = g;
+        dst[i * 4 + 3] = 255;
+    }
+    app.set_camera_image(slint::Image::from_rgba8(pb));
 
     app.on_quit(|| std::process::exit(0));
 
