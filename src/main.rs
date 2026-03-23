@@ -65,90 +65,61 @@ fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTre
     Rc::new(slint::VecModel::from(entries)).into()
 }
 
-fn render_bioformats_image(
-    bf: &mut ripp::session::BioformatsData,
-    z: u32,
-    cam_x: f64,
-    cam_y: f64,
-    zoom: f64,
-    lo: f32,
-    hi: f32,
-) -> Option<slint::Image> {
-    let meta = bf.reader.metadata();
-    let w = meta.size_x;
-    let h = meta.size_y;
-    let bytes = bf.reader.open_bytes(z).ok()?;
-
-    let is_gray = bytes.len() == (w * h) as usize;
-    let is_rgb  = bytes.len() == (w * h * 3) as usize;
-    if !is_gray && !is_rgb { return None; }
-
-    let range = (hi - lo).max(1.0);
-    let apply = |v: u8| -> u8 {
-        ((v as f32 - lo) / range * 255.0).clamp(0.0, 255.0) as u8
+/// Upload the current z-slice of the active Tab2d to the GPU renderer.
+fn upload_viewer2d_image(
+    session: &Rc<RefCell<ripp::session::RippSession>>,
+    viewer2d: &mut ripp::viewer2d::Viewer2dRenderer,
+    tab_idx: usize,
+) {
+    let (proj_id, obj_id, z) = {
+        let s = session.borrow();
+        match s.tabs.get(tab_idx) {
+            Some(ripp::session::RippTab::Tab2d(t)) if t.selected_proj_id >= 0 =>
+                (t.selected_proj_id, t.selected_obj_id, t.camera.z as u32),
+            _ => return,
+        }
     };
-
-    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
-    let out = pb.make_mut_bytes();
-
-    for oy in 0..h {
-        for ox in 0..w {
-            let src_x = (cam_x + (ox as f64 - w as f64 / 2.0) / zoom).round() as i64;
-            let src_y = (cam_y + (oy as f64 - h as f64 / 2.0) / zoom).round() as i64;
-            let i = (oy * w + ox) as usize;
-            if src_x >= 0 && src_x < w as i64 && src_y >= 0 && src_y < h as i64 {
-                let si = src_y as usize * w as usize + src_x as usize;
-                let (r, g, b) = if is_gray {
-                    let v = bytes[si]; (v, v, v)
-                } else {
-                    (bytes[si * 3], bytes[si * 3 + 1], bytes[si * 3 + 2])
-                };
-                out[i * 4]     = apply(r);
-                out[i * 4 + 1] = apply(g);
-                out[i * 4 + 2] = apply(b);
-            } else {
-                out[i * 4]     = 0;
-                out[i * 4 + 1] = 0;
-                out[i * 4 + 2] = 0;
+    let mut s = session.borrow_mut();
+    if let Some(proj) = s.projects.get_mut(&(proj_id as u32)) {
+        if let Some(obj) = ripp::session::find_object_mut(&mut proj.root, obj_id as u32) {
+            if let ripp::session::ProjectData::Bioformats(bf) = &mut obj.data {
+                let meta = bf.reader.metadata();
+                let w = meta.size_x;
+                let h = meta.size_y;
+                if let Ok(bytes) = bf.reader.open_bytes(z) {
+                    let is_gray = bytes.len() == (w * h) as usize;
+                    let is_rgb  = bytes.len() == (w * h * 3) as usize;
+                    if is_gray || is_rgb {
+                        viewer2d.upload(&bytes, w, h, is_gray);
+                    }
+                }
             }
-            out[i * 4 + 3] = 255;
         }
     }
-    Some(slint::Image::from_rgba8(pb))
 }
 
-fn do_render_viewer2d(
-    session: &std::rc::Rc<std::cell::RefCell<ripp::session::RippSession>>,
+/// Render with current camera/level parameters and push result to Slint.
+fn render_viewer2d(
+    session: &Rc<RefCell<ripp::session::RippSession>>,
+    viewer2d: &ripp::viewer2d::Viewer2dRenderer,
     tab_idx: usize,
     lo: f32,
     hi: f32,
     ui: &AppWindow,
 ) {
-    let (proj_id, obj_id, z, cam_x, cam_y, zoom) = {
+    let (cam_x, cam_y, zoom) = {
         let s = session.borrow();
         match s.tabs.get(tab_idx) {
-            Some(ripp::session::RippTab::Tab2d(t)) => (
-                t.selected_proj_id, t.selected_obj_id,
-                t.camera.z as u32, t.camera.x, t.camera.y, t.camera.zoom,
-            ),
+            Some(ripp::session::RippTab::Tab2d(t)) => (t.camera.x, t.camera.y, t.camera.zoom),
             _ => return,
         }
     };
-    if proj_id < 0 { return; }
-
-    let image_opt = {
-        let mut s = session.borrow_mut();
-        if let Some(proj) = s.projects.get_mut(&(proj_id as u32)) {
-            if let Some(obj) = ripp::session::find_object_mut(&mut proj.root, obj_id as u32) {
-                if let ripp::session::ProjectData::Bioformats(bf) = &mut obj.data {
-                    render_bioformats_image(bf, z, cam_x, cam_y, zoom, lo, hi)
-                } else { None }
-            } else { None }
-        } else { None }
-    };
-
-    if let Some(img) = image_opt {
-        ui.set_viewer2d_image(img);
+    if let Some(pixels) = viewer2d.render(cam_x, cam_y, zoom, lo, hi) {
+        let w = viewer2d.out_w();
+        let h = viewer2d.out_h();
+        let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+        pb.make_mut_bytes().copy_from_slice(&pixels);
+        ui.set_viewer2d_image(slint::Image::from_rgba8(pb));
         ui.set_viewer2d_image_loaded(true);
     }
 }
@@ -163,6 +134,8 @@ fn main() {
     }));
     app.set_project_tree(build_tree(&session.borrow()));
     app.set_left_tabs(build_left_tabs(&session.borrow()));
+
+    let viewer2d = Rc::new(RefCell::new(ripp::viewer2d::Viewer2dRenderer::new()));
 
     app.on_close_left_tab({
         let session = session.clone();
@@ -242,6 +215,7 @@ fn main() {
 
     app.on_viewer2d_object_selected({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         move |project_id, object_id| {
             if let Some(ui) = app_weak.upgrade() {
@@ -274,13 +248,15 @@ fn main() {
                 ui.set_viewer2d_z_max(z_max as f32);
                 let lo = ui.get_viewer2d_lo();
                 let hi = ui.get_viewer2d_hi();
-                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
+                upload_viewer2d_image(&session, &mut viewer2d.borrow_mut(), tab_idx);
+                render_viewer2d(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
             }
         }
     });
 
     app.on_viewer2d_panned({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         move |dx, dy| {
             if let Some(ui) = app_weak.upgrade() {
@@ -294,13 +270,14 @@ fn main() {
                 }
                 let lo = ui.get_viewer2d_lo();
                 let hi = ui.get_viewer2d_hi();
-                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
+                render_viewer2d(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
             }
         }
     });
 
     app.on_viewer2d_scrolled({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         move |delta| {
             if let Some(ui) = app_weak.upgrade() {
@@ -314,13 +291,14 @@ fn main() {
                 }
                 let lo = ui.get_viewer2d_lo();
                 let hi = ui.get_viewer2d_hi();
-                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
+                render_viewer2d(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
             }
         }
     });
 
     app.on_viewer2d_settings_changed({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         move || {
             if let Some(ui) = app_weak.upgrade() {
@@ -334,13 +312,14 @@ fn main() {
                         t.hi = hi;
                     }
                 }
-                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
+                render_viewer2d(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
             }
         }
     });
 
     app.on_viewer2d_z_changed({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         move |z| {
             if let Some(ui) = app_weak.upgrade() {
@@ -353,7 +332,8 @@ fn main() {
                 }
                 let lo = ui.get_viewer2d_lo();
                 let hi = ui.get_viewer2d_hi();
-                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
+                upload_viewer2d_image(&session, &mut viewer2d.borrow_mut(), tab_idx);
+                render_viewer2d(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -612,6 +592,7 @@ fn main() {
     let prev_tab_idx: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
     app.on_left_tab_activated({
         let session = session.clone();
+        let viewer2d = viewer2d.clone();
         let app_weak = app.as_weak();
         let live_running = live_running.clone();
         let start_live = start_live.clone();
@@ -646,7 +627,8 @@ fn main() {
                         let (lo, hi) = (t.lo, t.hi);
                         drop(s);
                         if has_obj {
-                            do_render_viewer2d(&session, new_idx, lo, hi, &ui);
+                            upload_viewer2d_image(&session, &mut viewer2d.borrow_mut(), new_idx);
+                            render_viewer2d(&session, &viewer2d.borrow(), new_idx, lo, hi, &ui);
                         }
                     }
                     Some(ripp::session::RippTab::Camera(tc)) => {
