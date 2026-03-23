@@ -1,24 +1,25 @@
 // Headless Slint renderer streamed as MJPEG over HTTP.
 //
-// Slint's software renderer runs on the main thread and broadcasts encoded JPEG frames.
+// Slint's software renderer runs on the main thread and broadcasts encoded PNG frames.
 // The actix-web HTTP server runs on a background thread and subscribes to those frames.
-// Mouse and keyboard events POSTed to /input are forwarded to Slint each render frame.
+// Mouse and keyboard events posted to /ws are forwarded to Slint each render frame.
 //
 // Run with:   cargo run --bin server
 // Then open:  http://127.0.0.1:8080
-slint::include_modules!();
 
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
 use ripp::teapot::TeapotRenderer;
 use ripp::camera::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
+use ripp::{AppWindow, DevicePropEntry};
+use ripp::app_logic::AppLogic;
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 // Default render dimensions (used until the browser reports its viewport size).
@@ -27,43 +28,6 @@ const DEFAULT_H: u32 = 540;
 // TeapotRenderer is created once at this fixed size; Slint scales the image in layout.
 const TEAPOT_W: u32 = DEFAULT_W / 2;
 const TEAPOT_H: u32 = DEFAULT_H - 36;
-
-// ── File browser helper ───────────────────────────────────────────────────────
-
-fn fmt_size(bytes: u64) -> String {
-    if bytes < 1_000 {
-        format!("{} B", bytes)
-    } else if bytes < 1_000_000 {
-        format!("{:.1} KB", bytes as f64 / 1_000.0)
-    } else if bytes < 1_000_000_000 {
-        format!("{:.1} MB", bytes as f64 / 1_000_000.0)
-    } else {
-        format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
-    }
-}
-
-fn load_dir(path: &std::path::Path) -> Vec<FileEntry> {
-    let mut entries: Vec<FileEntry> = std::fs::read_dir(path)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .map(|e| {
-            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            let size = if is_dir {
-                "—".into()
-            } else {
-                e.metadata().map(|m| fmt_size(m.len())).unwrap_or_default().into()
-            };
-            FileEntry {
-                name: e.file_name().to_string_lossy().to_string().into(),
-                is_dir,
-                size,
-            }
-        })
-        .collect();
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
-    entries
-}
 
 // ── Headless Slint platform ──────────────────────────────────────────────────
 
@@ -104,28 +68,6 @@ fn to_button(s: &str) -> slint::platform::PointerEventButton {
     }
 }
 
-// ── Session helpers ───────────────────────────────────────────────────────────
-
-fn build_left_tabs(session: &ripp::session::RippSession) -> slint::ModelRc<LeftTabEntry> {
-    let entries: Vec<LeftTabEntry> = session.tabs.iter()
-        .map(|t| LeftTabEntry { label: t.label().into(), tab_type: t.type_id() })
-        .collect();
-    Rc::new(slint::VecModel::from(entries)).into()
-}
-
-fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTreeEntry> {
-    let entries: Vec<ProjectTreeEntry> = ripp::session::flatten_session(session)
-        .into_iter()
-        .map(|(label, indent, obj_id, proj_id)| ProjectTreeEntry {
-            label: label.into(),
-            indent,
-            object_id: obj_id as i32,
-            project_id: proj_id as i32,
-        })
-        .collect();
-    Rc::new(slint::VecModel::from(entries)).into()
-}
-
 // ── Render loop (main thread) ────────────────────────────────────────────────
 
 fn run_render_loop(
@@ -137,111 +79,37 @@ fn run_render_loop(
     camera: CameraHandle,
     show_fps: bool,
 ) {
-    let session = Rc::new(std::cell::RefCell::new({
-        let mut s = ripp::session::RippSession::new();
-        s.add_project("Demo Project");
-        s
-    }));
-    ui.set_project_tree(build_tree(&session.borrow()));
-    ui.set_left_tabs(build_left_tabs(&session.borrow()));
+    // All shared logic: session, viewer2d, file browser, callbacks.
+    // Pass `|| {}` for start_live — the server restarts live via on_live_toggled directly.
+    let logic = AppLogic::new(camera.clone());
+    logic.register_all(&ui, || {});
 
-    ui.on_new_project({
-        let session = session.clone();
-        let ui_weak = ui.as_weak();
-        move || {
-            session.borrow_mut().add_project("New Project");
-            if let Some(u) = ui_weak.upgrade() {
-                u.set_project_tree(build_tree(&session.borrow()));
-            }
-        }
-    });
-
-    ui.on_close_left_tab({
-        let session = session.clone();
-        let ui_weak = ui.as_weak();
-        move |index| {
-            let index = index as usize;
-            let mut s = session.borrow_mut();
-            if index < s.tabs.len() {
-                s.tabs.remove(index);
-            }
-            drop(s);
-            if let Some(u) = ui_weak.upgrade() {
-                u.set_left_tabs(build_left_tabs(&session.borrow()));
-                let new_len = session.borrow().tabs.len() as i32;
-                if u.get_active_left_tab() >= new_len {
-                    u.set_active_left_tab((new_len - 1).max(0));
-                }
-            }
-        }
-    });
-    ui.on_project_tree_selected(|_object_id| {});
-    ui.on_viewer2d_object_selected(|_project_id, _object_id| {});
-    ui.on_viewer2d_panned(|_dx, _dy| {});
-    ui.on_viewer2d_scrolled(|_delta| {});
-    ui.on_viewer2d_settings_changed(|| {});
-    ui.on_viewer2d_z_changed(|_z| {});
-    ui.on_camera_settings_changed(|| {});
-    ui.on_add_tab_3d(|| {});
-    ui.on_add_tab_2d(|| {});
-    ui.on_add_tab_camera(|| {});
-    ui.on_viewer3d_panned(|_dx, _dy| {});
-    ui.on_viewer3d_scrolled(|_delta| {});
-    ui.on_open_file(|_filename| {});
-
-    ui.on_close_project({
-        let session = session.clone();
-        let ui_weak = ui.as_weak();
-        move || {
-            let proj_id = ui_weak.upgrade()
-                .map(|u| u.get_selected_project_id())
-                .unwrap_or(-1);
-            if proj_id >= 0 {
-                session.borrow_mut().projects.remove(&(proj_id as u32));
-                if let Some(u) = ui_weak.upgrade() {
-                    u.set_selected_project_id(-1);
-                    u.set_project_tree(build_tree(&session.borrow()));
-                }
-            }
-        }
-    });
-
-    let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
-    let (mut w, mut h) = *viewport.lock().unwrap();
-    let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
-    let mut last_print  = Instant::now();
-    let mut frame_count = 0u32;
-
-    // Pending camera image slot: snap threads write here; render loop drains it.
-    // CameraImage is Send; conversion to slint::Image happens on the render thread.
-    let pending_snap: Arc<Mutex<Option<CameraImage>>> = Arc::new(Mutex::new(None));
-
-    // Pending device-props slot: move threads write here; render loop drains it.
+    // ── Server-specific camera snap/live (pending-slot approach) ─────────────
+    // Snap threads write here; the render loop drains and applies lo/hi each frame.
+    let pending_snap:  Arc<Mutex<Option<CameraImage>>>    = Arc::new(Mutex::new(None));
     let pending_props: Arc<Mutex<Option<Vec<DeviceProp>>>> = Arc::new(Mutex::new(None));
-    let props_refreshing = Arc::new(AtomicBool::new(false));
+    let props_refreshing = logic.props_refreshing.clone();
+    let live_running     = logic.live_running.clone();
 
     ui.on_snap_requested({
         let camera = camera.clone();
-        let slot = pending_snap.clone();
+        let slot   = pending_snap.clone();
         move || {
             let camera = camera.clone();
-            let slot = slot.clone();
-            std::thread::spawn(move || {
-                *slot.lock().unwrap() = Some(camera.snap());
-            });
+            let slot   = slot.clone();
+            std::thread::spawn(move || { *slot.lock().unwrap() = Some(camera.snap()); });
         }
     });
 
-    let live_running = Arc::new(AtomicBool::new(false));
     ui.on_live_toggled({
-        let camera = camera.clone();
-        let slot = pending_snap.clone();
+        let camera       = camera.clone();
+        let slot         = pending_snap.clone();
         let live_running = live_running.clone();
         move |enabled| {
             live_running.store(enabled, Ordering::SeqCst);
             if enabled {
-                let camera = camera.clone();
-                let slot = slot.clone();
+                let camera       = camera.clone();
+                let slot         = slot.clone();
                 let live_running = live_running.clone();
                 std::thread::spawn(move || {
                     while live_running.load(Ordering::SeqCst) {
@@ -253,14 +121,14 @@ fn run_render_loop(
     });
 
     ui.on_camera_panned({
-        let camera = camera.clone();
-        let slot = pending_props.clone();
-        let refreshing = props_refreshing.clone();
+        let camera       = camera.clone();
+        let slot         = pending_props.clone();
+        let refreshing   = props_refreshing.clone();
         move |dx, dy| {
             camera.move_xy(dx as f64, dy as f64);
             if !refreshing.swap(true, Ordering::SeqCst) {
-                let camera = camera.clone();
-                let slot = slot.clone();
+                let camera     = camera.clone();
+                let slot       = slot.clone();
                 let refreshing = refreshing.clone();
                 std::thread::spawn(move || {
                     let props = camera.device_props();
@@ -272,14 +140,14 @@ fn run_render_loop(
     });
 
     ui.on_camera_scrolled({
-        let camera = camera.clone();
-        let slot = pending_props.clone();
+        let camera     = camera.clone();
+        let slot       = pending_props.clone();
         let refreshing = props_refreshing.clone();
         move |delta| {
             camera.move_z(delta as f64);
             if !refreshing.swap(true, Ordering::SeqCst) {
-                let camera = camera.clone();
-                let slot = slot.clone();
+                let camera     = camera.clone();
+                let slot       = slot.clone();
                 let refreshing = refreshing.clone();
                 std::thread::spawn(move || {
                     let props = camera.device_props();
@@ -290,6 +158,13 @@ fn run_render_loop(
         }
     });
 
+    // ── Render loop ──────────────────────────────────────────────────────────
+    let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
+    let (mut w, mut h) = *viewport.lock().unwrap();
+    let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
+    let mut last_print  = Instant::now();
+    let mut frame_count = 0u32;
+
     loop {
         let deadline = Instant::now() + Duration::from_millis(33);
 
@@ -298,9 +173,7 @@ fn run_render_loop(
             continue;
         }
 
-        // Wait until an input event arrives or the frame deadline is reached,
-        // then drain all queued events. This means input wakes the render loop
-        // immediately rather than waiting up to 33 ms.
+        // Drain input events.
         {
             let (lock, cvar) = event_queue.as_ref();
             let mut guard = lock.lock().unwrap();
@@ -341,19 +214,24 @@ fn run_render_loop(
             }
         }
 
-        // Resize Slint window if the browser reported new dimensions.
+        // Resize if browser reported new dimensions.
         let (new_w, new_h) = *viewport.lock().unwrap();
         if new_w != w || new_h != h {
-            w = new_w;
-            h = new_h;
+            w = new_w; h = new_h;
             window.set_size(slint::PhysicalSize::new(w, h));
             buf.resize((w * h) as usize, Rgb565Pixel::default());
         }
 
+        // Drain pending snap (apply current lo/hi).
         if let Some(raw) = pending_snap.lock().unwrap().take() {
-            ui.set_camera_image(raw.to_slint_image(0.0, 255.0));
+            let lo = ui.get_camera_lo();
+            let hi = ui.get_camera_hi();
+            *logic.last_camera_frame.lock().unwrap() =
+                Some((raw.data.clone(), raw.width, raw.height));
+            ui.set_camera_image(raw.to_slint_image(lo, hi));
         }
 
+        // Drain pending device props.
         if let Some(props) = pending_props.lock().unwrap().take() {
             let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
                 device: p.device.into(), property: p.property.into(), value: p.value.into(),
@@ -365,9 +243,9 @@ fn run_render_loop(
 
         let t0 = Instant::now();
 
-        // 1. Render teapot → Slint image property (Slint scales it in layout).
+        // Render teapot → Slint image property.
         let (yaw, pitch, distance) = {
-            let s = session.borrow();
+            let s = logic.session.borrow();
             s.tabs.iter().find_map(|t| {
                 if let ripp::session::RippTab::Tab3d(t3) = t {
                     Some((t3.camera.yaw, t3.camera.pitch, t3.camera.distance))
@@ -380,15 +258,12 @@ fn run_render_loop(
         ui.set_teapot_image(slint::Image::from_rgba8(pb));
         let t1 = Instant::now();
 
-        // 2. Render full Slint UI to RGB565 buffer.
-        window.draw_if_needed(|renderer| {
-            renderer.render(&mut buf, w as usize);
-        });
+        // Render full Slint UI to RGB565 buffer.
+        window.draw_if_needed(|renderer| { renderer.render(&mut buf, w as usize); });
         let t2 = Instant::now();
 
-        // 3. Expand RGB565 → RGB888 for PNG encoding.
-        let rgb: Vec<u8> = buf
-            .iter()
+        // Expand RGB565 → RGB888 for PNG encoding.
+        let rgb: Vec<u8> = buf.iter()
             .flat_map(|p| {
                 let raw = p.0;
                 let r = ((raw & 0xF800) >> 8) as u8;
@@ -421,7 +296,7 @@ fn run_render_loop(
             }
         }
 
-        // Sleep until the frame deadline or the next input event.
+        // Sleep until deadline or next input event.
         let remaining = deadline.saturating_duration_since(Instant::now());
         if !remaining.is_zero() {
             let (lock, cvar) = event_queue.as_ref();
@@ -439,8 +314,7 @@ fn encode_png(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
     enc.set_depth(png::BitDepth::Eight);
     enc.set_compression(png::Compression::Fast);
     enc.set_filter(png::FilterType::NoFilter);
-    enc.write_header().unwrap()
-        .write_image_data(rgb).unwrap();
+    enc.write_header().unwrap().write_image_data(rgb).unwrap();
     out
 }
 
@@ -468,9 +342,6 @@ async fn set_viewport(
     HttpResponse::NoContent().finish()
 }
 
-/// WebSocket endpoint for input events.
-/// Each browser tab opens one persistent WS connection and sends JSON-encoded
-/// InputEvent messages. This avoids per-event HTTP round-trip overhead.
 async fn ws_input(
     req: actix_web::HttpRequest,
     stream: web::Payload,
@@ -494,7 +365,6 @@ async fn ws_input(
     Ok(res)
 }
 
-/// Each HTTP client subscribes to the broadcast channel and streams JPEG frames.
 async fn mjpeg_stream(
     frame_tx: web::Data<Arc<tokio::sync::broadcast::Sender<Vec<u8>>>>,
 ) -> HttpResponse {
@@ -528,10 +398,9 @@ fn main() {
     let show_fps = std::env::args().any(|a| a == "--fps");
     let use_sim  = std::env::args().any(|a| a == "--sim-camera");
 
-    let viewport: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
-    let event_queue: EventQueue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
+    let viewport:    Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
+    let event_queue: EventQueue             = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
 
-    // Set up headless Slint software-renderer platform on the main thread.
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     window.set_size(slint::PhysicalSize::new(DEFAULT_W, DEFAULT_H));
     slint::platform::set_platform(Box::new(HeadlessPlatform { window: window.clone() }))
@@ -540,48 +409,15 @@ fn main() {
     let ui = AppWindow::new().unwrap();
     ui.set_server_mode(true);
 
-    let cwd = Rc::new(std::cell::RefCell::new(
-        std::fs::canonicalize(".").unwrap_or_else(|_| std::path::PathBuf::from("."))
-    ));
-    let entries = load_dir(&cwd.borrow());
-    ui.set_current_path(cwd.borrow().to_string_lossy().to_string().into());
-    ui.set_file_list(Rc::new(slint::VecModel::from(entries)).into());
-    ui.on_navigate_to({
-        let ui_weak = ui.as_weak();
-        let cwd = cwd.clone();
-        move |segment| {
-            let mut cwd = cwd.borrow_mut();
-            if segment == ".." {
-                cwd.pop();
-            } else {
-                cwd.push(segment.as_str());
-            }
-            let entries = load_dir(&cwd);
-            if let Some(u) = ui_weak.upgrade() {
-                u.set_current_path(cwd.to_string_lossy().to_string().into());
-                u.set_file_list(Rc::new(slint::VecModel::from(entries)).into());
-            }
-        }
-    });
     let cam = start_camera_thread(use_sim);
-    ui.set_camera_image(cam.snap().to_slint_image(0.0, 255.0));
-
-    let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
-        device: p.device.into(),
-        property: p.property.into(),
-        value: p.value.into(),
-    }).collect();
-    ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
-
-    ui.on_quit(|| std::process::exit(0));
 
     let (frame_tx, _) = tokio::sync::broadcast::channel::<Vec<u8>>(4);
     let frame_tx = Arc::new(frame_tx);
 
-    // HTTP server on a background thread with its own Tokio runtime.
-    let frame_tx_http  = frame_tx.clone();
-    let viewport_http  = viewport.clone();
-    let queue_http     = event_queue.clone();
+    // HTTP server on a background thread.
+    let frame_tx_http = frame_tx.clone();
+    let viewport_http = viewport.clone();
+    let queue_http    = event_queue.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.block_on(async move {
@@ -591,13 +427,12 @@ fn main() {
                     .app_data(web::Data::new(frame_tx_http.clone()))
                     .app_data(web::Data::new(viewport_http.clone()))
                     .app_data(web::Data::new(queue_http.clone()))
-                    .route("/",        web::get().to(index))
-                    .route("/stream",  web::get().to(mjpeg_stream))
-                    .route("/viewport",web::get().to(set_viewport))
-                    .route("/ws",      web::get().to(ws_input))
+                    .route("/",         web::get().to(index))
+                    .route("/stream",   web::get().to(mjpeg_stream))
+                    .route("/viewport", web::get().to(set_viewport))
+                    .route("/ws",       web::get().to(ws_input))
             })
-            .bind("127.0.0.1:8080")
-            .expect("bind failed")
+            .bind("127.0.0.1:8080").expect("bind failed")
             .run();
 
             tokio::spawn(async move {
@@ -610,6 +445,5 @@ fn main() {
         });
     });
 
-    // Main thread: Slint render loop. Runs until the process is killed.
     run_render_loop(ui, window, frame_tx, viewport, event_queue, cam, show_fps);
 }
