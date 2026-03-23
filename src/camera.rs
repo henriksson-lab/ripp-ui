@@ -1,10 +1,28 @@
+use std::sync::mpsc;
 use micromanager::CMMCore;
 use micromanager::adapters::demo::DemoAdapter;
+
+// ── Public data types ─────────────────────────────────────────────────────────
 
 pub struct CameraImage {
     pub data: Vec<u8>, // GRAY8
     pub width: u32,
     pub height: u32,
+}
+
+impl CameraImage {
+    /// Convert GRAY8 → RGBA8 and wrap as a Slint `Image`.
+    pub fn to_slint_image(&self) -> slint::Image {
+        let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(self.width, self.height);
+        let dst = pb.make_mut_bytes();
+        for (i, &g) in self.data.iter().enumerate() {
+            dst[i * 4]     = g;
+            dst[i * 4 + 1] = g;
+            dst[i * 4 + 2] = g;
+            dst[i * 4 + 3] = 255;
+        }
+        slint::Image::from_rgba8(pb)
+    }
 }
 
 pub struct DeviceProp {
@@ -13,12 +31,60 @@ pub struct DeviceProp {
     pub value: String,
 }
 
-pub struct DemoCamera {
+// ── Command protocol ──────────────────────────────────────────────────────────
+
+enum CameraCmd {
+    Snap(mpsc::Sender<CameraImage>),
+    GetProps(mpsc::Sender<Vec<DeviceProp>>),
+}
+
+// ── Public handle (cheaply cloneable, Send) ───────────────────────────────────
+
+#[derive(Clone)]
+pub struct CameraHandle {
+    cmd_tx: mpsc::Sender<CameraCmd>,
+}
+
+impl CameraHandle {
+    /// Snap one image. Blocks the calling thread until the camera thread replies.
+    pub fn snap(&self) -> CameraImage {
+        let (tx, rx) = mpsc::channel();
+        self.cmd_tx.send(CameraCmd::Snap(tx)).unwrap();
+        rx.recv().unwrap()
+    }
+
+    /// Fetch all device properties. Blocks until the camera thread replies.
+    pub fn device_props(&self) -> Vec<DeviceProp> {
+        let (tx, rx) = mpsc::channel();
+        self.cmd_tx.send(CameraCmd::GetProps(tx)).unwrap();
+        rx.recv().unwrap()
+    }
+}
+
+/// Spawn the camera thread and return a handle to it.
+/// The thread exits automatically when all handles are dropped.
+pub fn start_camera_thread() -> CameraHandle {
+    let (cmd_tx, cmd_rx) = mpsc::channel::<CameraCmd>();
+    std::thread::spawn(move || {
+        let mut cam = DemoCamera::new();
+        while let Ok(cmd) = cmd_rx.recv() {
+            match cmd {
+                CameraCmd::Snap(reply)     => { let _ = reply.send(cam.snap()); }
+                CameraCmd::GetProps(reply) => { let _ = reply.send(cam.device_props()); }
+            }
+        }
+    });
+    CameraHandle { cmd_tx }
+}
+
+// ── Internal camera wrapper (owns CMMCore) ────────────────────────────────────
+
+struct DemoCamera {
     core: CMMCore,
 }
 
 impl DemoCamera {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let mut core = CMMCore::new();
         core.register_adapter(Box::new(DemoAdapter));
 
@@ -42,7 +108,7 @@ impl DemoCamera {
         Self { core }
     }
 
-    pub fn snap(&mut self) -> CameraImage {
+    fn snap(&mut self) -> CameraImage {
         self.core.snap_image().unwrap();
         let frame = self.core.get_image().unwrap();
         CameraImage {
@@ -52,7 +118,7 @@ impl DemoCamera {
         }
     }
 
-    pub fn device_props(&self) -> Vec<DeviceProp> {
+    fn device_props(&self) -> Vec<DeviceProp> {
         let mut rows = Vec::new();
         for label in self.core.device_labels() {
             if let Ok(prop_names) = self.core.get_property_names(label) {

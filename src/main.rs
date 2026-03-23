@@ -3,9 +3,10 @@ slint::include_modules!();
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Instant;
 use ripp::teapot::TeapotRenderer;
-use ripp::camera::DemoCamera;
+use ripp::camera::start_camera_thread;
 
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;
@@ -96,17 +97,8 @@ fn main() {
         },
     );
 
-    let mut cam = DemoCamera::new();
-    let img = cam.snap();
-    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(img.width, img.height);
-    let dst = pb.make_mut_bytes();
-    for (i, &g) in img.data.iter().enumerate() {
-        dst[i * 4]     = g;
-        dst[i * 4 + 1] = g;
-        dst[i * 4 + 2] = g;
-        dst[i * 4 + 3] = 255;
-    }
-    app.set_camera_image(slint::Image::from_rgba8(pb));
+    let cam = start_camera_thread();
+    app.set_camera_image(cam.snap().to_slint_image());
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
         device: p.device.into(),
@@ -114,6 +106,47 @@ fn main() {
         value: p.value.into(),
     }).collect();
     app.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+
+    // Manual snap
+    app.on_snap_requested({
+        let cam = cam.clone();
+        let app_weak = app.as_weak();
+        move || {
+            let cam = cam.clone();
+            let app_weak = app_weak.clone();
+            std::thread::spawn(move || {
+                let raw = cam.snap(); // CameraImage is Send
+                app_weak.upgrade_in_event_loop(move |ui| ui.set_camera_image(raw.to_slint_image())).ok();
+            });
+        }
+    });
+
+    // Live (continuous) snap
+    let live_running = Arc::new(AtomicBool::new(false));
+    app.on_live_toggled({
+        let cam = cam.clone();
+        let app_weak = app.as_weak();
+        let live_running = live_running.clone();
+        move |enabled| {
+            live_running.store(enabled, Ordering::SeqCst);
+            if enabled {
+                let cam = cam.clone();
+                let app_weak = app_weak.clone();
+                let live_running = live_running.clone();
+                std::thread::spawn(move || {
+                    while live_running.load(Ordering::SeqCst) {
+                        let raw = cam.snap();
+                        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+                        if app_weak.upgrade_in_event_loop(move |ui| {
+                            ui.set_camera_image(raw.to_slint_image());
+                            let _ = done_tx.send(());
+                        }).is_err() { break; }
+                        done_rx.recv().ok(); // wait until the frame is actually displayed
+                    }
+                });
+            }
+        }
+    });
 
     app.on_quit(|| std::process::exit(0));
 

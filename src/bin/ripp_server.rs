@@ -11,13 +11,14 @@ slint::include_modules!();
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
 use ripp::teapot::TeapotRenderer;
-use ripp::camera::DemoCamera;
+use ripp::camera::{start_camera_thread, CameraHandle, CameraImage};
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::{Arc, Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 // Default render dimensions (used until the browser reports its viewport size).
@@ -111,6 +112,7 @@ fn run_render_loop(
     frame_tx: Arc<tokio::sync::broadcast::Sender<Vec<u8>>>,
     viewport: Arc<Mutex<(u32, u32)>>,
     event_queue: EventQueue,
+    camera: CameraHandle,
     show_fps: bool,
 ) {
     let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
@@ -119,6 +121,42 @@ fn run_render_loop(
     let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
     let mut last_print  = Instant::now();
     let mut frame_count = 0u32;
+
+    // Pending camera image slot: snap threads write here; render loop drains it.
+    // CameraImage is Send; conversion to slint::Image happens on the render thread.
+    let pending_snap: Arc<Mutex<Option<CameraImage>>> = Arc::new(Mutex::new(None));
+
+    ui.on_snap_requested({
+        let camera = camera.clone();
+        let slot = pending_snap.clone();
+        move || {
+            let camera = camera.clone();
+            let slot = slot.clone();
+            std::thread::spawn(move || {
+                *slot.lock().unwrap() = Some(camera.snap());
+            });
+        }
+    });
+
+    let live_running = Arc::new(AtomicBool::new(false));
+    ui.on_live_toggled({
+        let camera = camera.clone();
+        let slot = pending_snap.clone();
+        let live_running = live_running.clone();
+        move |enabled| {
+            live_running.store(enabled, Ordering::SeqCst);
+            if enabled {
+                let camera = camera.clone();
+                let slot = slot.clone();
+                let live_running = live_running.clone();
+                std::thread::spawn(move || {
+                    while live_running.load(Ordering::SeqCst) {
+                        *slot.lock().unwrap() = Some(camera.snap());
+                    }
+                });
+            }
+        }
+    });
 
     loop {
         let deadline = Instant::now() + Duration::from_millis(33);
@@ -178,6 +216,10 @@ fn run_render_loop(
             h = new_h;
             window.set_size(slint::PhysicalSize::new(w, h));
             buf.resize((w * h) as usize, Rgb565Pixel::default());
+        }
+
+        if let Some(raw) = pending_snap.lock().unwrap().take() {
+            ui.set_camera_image(raw.to_slint_image());
         }
 
         slint::platform::update_timers_and_animations();
@@ -374,17 +416,8 @@ fn main() {
             }
         }
     });
-    let mut cam = DemoCamera::new();
-    let img = cam.snap();
-    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(img.width, img.height);
-    let dst = pb.make_mut_bytes();
-    for (i, &g) in img.data.iter().enumerate() {
-        dst[i * 4]     = g;
-        dst[i * 4 + 1] = g;
-        dst[i * 4 + 2] = g;
-        dst[i * 4 + 3] = 255;
-    }
-    ui.set_camera_image(slint::Image::from_rgba8(pb));
+    let cam = start_camera_thread();
+    ui.set_camera_image(cam.snap().to_slint_image());
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
         device: p.device.into(),
@@ -431,5 +464,5 @@ fn main() {
     });
 
     // Main thread: Slint render loop. Runs until the process is killed.
-    run_render_loop(ui, window, frame_tx, viewport, event_queue, show_fps);
+    run_render_loop(ui, window, frame_tx, viewport, event_queue, cam, show_fps);
 }
