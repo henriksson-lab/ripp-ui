@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::Instant;
 use ripp::teapot::TeapotRenderer;
 use ripp::camera::start_camera_thread;
 
@@ -208,6 +207,31 @@ fn main() {
             *selected_obj.borrow_mut() = (project_id, object_id);
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
+                // Read image dimensions and z range, then center the camera
+                let (img_w, img_h, z_max) = {
+                    let s = session.borrow();
+                    if let Some(proj) = s.projects.get(&(project_id as u32)) {
+                        if let Some(obj) = ripp::session::find_object_ref(&proj.root, object_id as u32) {
+                            if let ripp::session::ProjectData::Bioformats(bf) = &obj.data {
+                                let meta = bf.reader.metadata();
+                                (meta.size_x as f64, meta.size_y as f64,
+                                 (meta.size_z as i32 - 1).max(0))
+                            } else { (0.0, 0.0, 0) }
+                        } else { (0.0, 0.0, 0) }
+                    } else { (0.0, 0.0, 0) }
+                };
+                // Center camera and reset z
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.camera.x    = img_w / 2.0;
+                        t.camera.y    = img_h / 2.0;
+                        t.camera.zoom = 1.0;
+                        t.camera.z    = 0.0;
+                    }
+                }
+                ui.set_viewer2d_z(0.0);
+                ui.set_viewer2d_z_max(z_max as f32);
                 let brightness = ui.get_viewer2d_brightness();
                 let contrast = ui.get_viewer2d_contrast();
                 do_render_viewer2d(&session, (project_id, object_id), tab_idx, brightness, contrast, &ui);
@@ -266,6 +290,27 @@ fn main() {
         move || {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
+                let obj = *selected_obj.borrow();
+                let brightness = ui.get_viewer2d_brightness();
+                let contrast = ui.get_viewer2d_contrast();
+                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+            }
+        }
+    });
+
+    app.on_viewer2d_z_changed({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let selected_obj = selected_obj.clone();
+        move |z| {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.camera.z = z.round() as f64;
+                    }
+                }
                 let obj = *selected_obj.borrow();
                 let brightness = ui.get_viewer2d_brightness();
                 let contrast = ui.get_viewer2d_contrast();
@@ -347,25 +392,60 @@ fn main() {
 
     // Headless wgpu teapot renderer
     let renderer = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
-    let start    = Instant::now();
     let app_weak = app.as_weak();
 
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_millis(16),
-        move || {
-            let rotation = start.elapsed().as_secs_f32() * 0.8;
-            let pixels   = renderer.render_frame(rotation);
+        {
+            let session = session.clone();
+            move || {
+                let (yaw, pitch, distance) = {
+                    let s = session.borrow();
+                    s.tabs.iter().find_map(|t| {
+                        if let ripp::session::RippTab::Tab3d(t3) = t {
+                            Some((t3.camera.yaw, t3.camera.pitch, t3.camera.distance))
+                        } else { None }
+                    }).unwrap_or((0.0, 0.3, 6.0))
+                };
+                let pixels = renderer.render_frame(yaw, pitch, distance);
 
-            let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
-            pb.make_mut_bytes().copy_from_slice(&pixels);
+                let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
+                pb.make_mut_bytes().copy_from_slice(&pixels);
 
-            if let Some(ui) = app_weak.upgrade() {
-                ui.set_teapot_image(slint::Image::from_rgba8(pb));
+                if let Some(ui) = app_weak.upgrade() {
+                    ui.set_teapot_image(slint::Image::from_rgba8(pb));
+                }
             }
         },
     );
+
+    app.on_viewer3d_panned({
+        let session = session.clone();
+        move |dx, dy| {
+            let mut s = session.borrow_mut();
+            if let Some(t3) = s.tabs.iter_mut().find_map(|t| {
+                if let ripp::session::RippTab::Tab3d(t3) = t { Some(t3) } else { None }
+            }) {
+                t3.camera.yaw   -= dx * 0.005;
+                t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
+            }
+        }
+    });
+
+    app.on_viewer3d_scrolled({
+        let session = session.clone();
+        move |delta| {
+            let mut s = session.borrow_mut();
+            if let Some(t3) = s.tabs.iter_mut().find_map(|t| {
+                if let ripp::session::RippTab::Tab3d(t3) = t { Some(t3) } else { None }
+            }) {
+                t3.camera.distance = (t3.camera.distance * (-(delta * 0.005_f32)).exp())
+                    .clamp(0.5, 100.0);
+            }
+        }
+    });
 
     let use_sim = std::env::args().any(|a| a == "--sim-camera");
     let cam = start_camera_thread(use_sim);

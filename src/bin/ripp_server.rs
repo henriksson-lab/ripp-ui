@@ -180,6 +180,9 @@ fn run_render_loop(
     ui.on_viewer2d_panned(|_dx, _dy| {});
     ui.on_viewer2d_scrolled(|_delta| {});
     ui.on_viewer2d_settings_changed(|| {});
+    ui.on_viewer2d_z_changed(|_z| {});
+    ui.on_viewer3d_panned(|_dx, _dy| {});
+    ui.on_viewer3d_scrolled(|_delta| {});
     ui.on_open_file(|_filename| {});
 
     ui.on_close_project({
@@ -200,7 +203,6 @@ fn run_render_loop(
     });
 
     let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
-    let start  = Instant::now();
     let (mut w, mut h) = *viewport.lock().unwrap();
     let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
     let mut last_print  = Instant::now();
@@ -357,11 +359,18 @@ fn run_render_loop(
 
         slint::platform::update_timers_and_animations();
 
-        let rotation = start.elapsed().as_secs_f32() * 0.8;
         let t0 = Instant::now();
 
         // 1. Render teapot → Slint image property (Slint scales it in layout).
-        let pixels = teapot.render_frame(rotation);
+        let (yaw, pitch, distance) = {
+            let s = session.borrow();
+            s.tabs.iter().find_map(|t| {
+                if let ripp::session::RippTab::Tab3d(t3) = t {
+                    Some((t3.camera.yaw, t3.camera.pitch, t3.camera.distance))
+                } else { None }
+            }).unwrap_or((0.0, 0.3, 6.0))
+        };
+        let pixels = teapot.render_frame(yaw, pitch, distance);
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
         pb.make_mut_bytes().copy_from_slice(&pixels);
         ui.set_teapot_image(slint::Image::from_rgba8(pb));

@@ -10,6 +10,18 @@ pub struct RippSession {
 
 // --- tabs ---
 
+pub struct Camera3d {
+    pub yaw:      f32,   // azimuth in radians
+    pub pitch:    f32,   // elevation in radians, clamped ±PI/2
+    pub distance: f32,   // distance from origin
+}
+
+impl Default for Camera3d {
+    fn default() -> Self {
+        Self { yaw: 0.0, pitch: 0.3, distance: 6.0 }
+    }
+}
+
 pub struct Camera2d {
     pub x: f64,
     pub y: f64,
@@ -17,7 +29,9 @@ pub struct Camera2d {
     pub zoom: f64,
 }
 
-pub struct Tab3d;
+pub struct Tab3d {
+    pub camera: Camera3d,
+}
 
 pub struct Tab2d {
     pub camera: Camera2d,
@@ -53,7 +67,7 @@ impl RippSession {
         Self {
             projects: BTreeMap::new(),
             tabs: vec![
-                RippTab::Tab3d(Tab3d),
+                RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
                 RippTab::Tab2d(Tab2d { camera: Camera2d { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 } }),
                 RippTab::Camera(TabCamera),
             ],
@@ -148,6 +162,17 @@ fn flatten_object(obj: &ProjectObject, indent: i32, proj_id: u32, out: &mut Vec<
     for child in &obj.children {
         flatten_object(child, indent + 1, proj_id, out);
     }
+}
+
+/// Find an immutable reference to the `ProjectObject` with the given id anywhere in the tree.
+pub fn find_object_ref(obj: &ProjectObject, id: u32) -> Option<&ProjectObject> {
+    if obj.id == id { return Some(obj); }
+    for child in &obj.children {
+        if let Some(found) = find_object_ref(child, id) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// Find a mutable reference to the `ProjectObject` with the given id anywhere in the tree.

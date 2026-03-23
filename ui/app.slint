@@ -74,9 +74,16 @@ export component AppWindow inherits Window {
     callback viewer2d-object-selected(int, int);  // project-id, object-id
     in-out property <float> viewer2d-brightness: 0.0;   // -1..1
     in-out property <float> viewer2d-contrast: 1.0;     // 0..4
+    in-out property <float> viewer2d-z: 0;
+    in-out property <float> viewer2d-z-max: 0;
+    callback viewer3d-panned(float, float);
+    callback viewer3d-scrolled(float);
+    private property <float> v3d-drag-x;
+    private property <float> v3d-drag-y;
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
     callback viewer2d-settings-changed();
+    callback viewer2d-z-changed(float);
     private property <float> v2d-drag-x;
     private property <float> v2d-drag-y;
 
@@ -200,10 +207,37 @@ export component AppWindow inherits Window {
                 }
 
                 // 3D View tab
-                if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 0: Image {
-                    source: root.teapot-image;
+                if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 0: Rectangle {
                     vertical-stretch: 1;
-                    image-fit: fill;
+                    Image {
+                        source: root.teapot-image;
+                        width: 100%;
+                        height: 100%;
+                        image-fit: fill;
+                    }
+                    v3d-ta := TouchArea {
+                        mouse-cursor: crosshair;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                root.v3d-drag-x = self.mouse-x / 1px;
+                                root.v3d-drag-y = self.mouse-y / 1px;
+                            }
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                root.viewer3d-panned(
+                                    self.mouse-x / 1px - root.v3d-drag-x,
+                                    self.mouse-y / 1px - root.v3d-drag-y
+                                );
+                                root.v3d-drag-x = self.mouse-x / 1px;
+                                root.v3d-drag-y = self.mouse-y / 1px;
+                            }
+                        }
+                        scroll-event(e) => {
+                            root.viewer3d-scrolled(e.delta-y / 1px);
+                            return EventResult.accept;
+                        }
+                    }
                 }
 
                 // Camera tab
@@ -284,44 +318,64 @@ export component AppWindow inherits Window {
                 if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 1: VerticalLayout {
                     vertical-stretch: 1;
 
-                    // Main view area
-                    Rectangle {
+                    // Main view area + Z scrollbar
+                    HorizontalLayout {
                         vertical-stretch: 1;
-                        background: #111111;
-                        if root.viewer2d-image-loaded: Image {
-                            source: root.viewer2d-image;
-                            image-fit: contain;
-                            width: 100%;
-                            height: 100%;
-                        }
-                        if !root.viewer2d-image-loaded: Text {
-                            text: "No image selected";
-                            color: #555555;
-                            font-size: 14px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                        v2d-ta := TouchArea {
-                            mouse-cursor: crosshair;
-                            pointer-event(e) => {
-                                if (e.kind == PointerEventKind.down) {
-                                    root.v2d-drag-x = self.mouse-x / 1px;
-                                    root.v2d-drag-y = self.mouse-y / 1px;
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: #111111;
+                            if root.viewer2d-image-loaded: Image {
+                                source: root.viewer2d-image;
+                                image-fit: contain;
+                                width: 100%;
+                                height: 100%;
+                            }
+                            if !root.viewer2d-image-loaded: Text {
+                                text: "No image selected";
+                                color: #555555;
+                                font-size: 14px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            v2d-ta := TouchArea {
+                                mouse-cursor: crosshair;
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down) {
+                                        root.v2d-drag-x = self.mouse-x / 1px;
+                                        root.v2d-drag-y = self.mouse-y / 1px;
+                                    }
+                                }
+                                moved => {
+                                    if (self.pressed) {
+                                        root.viewer2d-panned(
+                                            self.mouse-x / 1px - root.v2d-drag-x,
+                                            self.mouse-y / 1px - root.v2d-drag-y
+                                        );
+                                        root.v2d-drag-x = self.mouse-x / 1px;
+                                        root.v2d-drag-y = self.mouse-y / 1px;
+                                    }
+                                }
+                                scroll-event(e) => {
+                                    root.viewer2d-scrolled(e.delta-y / 1px);
+                                    return EventResult.accept;
                                 }
                             }
-                            moved => {
-                                if (self.pressed) {
-                                    root.viewer2d-panned(
-                                        self.mouse-x / 1px - root.v2d-drag-x,
-                                        self.mouse-y / 1px - root.v2d-drag-y
-                                    );
-                                    root.v2d-drag-x = self.mouse-x / 1px;
-                                    root.v2d-drag-y = self.mouse-y / 1px;
-                                }
-                            }
-                            scroll-event(e) => {
-                                root.viewer2d-scrolled(e.delta-y / 1px);
-                                return EventResult.accept;
+                        }
+
+                        // Z-plane scrollbar
+                        Rectangle {
+                            width: 20px;
+                            background: #111111;
+                            Slider {
+                                width: 20px;
+                                height: parent.height;
+                                orientation: vertical;
+                                minimum: 0;
+                                maximum: root.viewer2d-z-max;
+                                value <=> root.viewer2d-z;
+                                enabled: root.viewer2d-z-max > 0;
+                                changed(v) => { root.viewer2d-z-changed(v); }
                             }
                         }
                     }
@@ -775,6 +829,11 @@ export component AppWindow inherits Window {
                                                     root.selected-file-row = -1;
                                                     root.selected-file-is-dir = false;
                                                     root.navigate-to(entry.name);
+                                                }
+                                            }
+                                            double-clicked => {
+                                                if (!entry.is-dir) {
+                                                    root.open-file(entry.name);
                                                 }
                                             }
                                         }

@@ -220,15 +220,17 @@ impl TeapotRenderer {
     }
 
     /// Render one frame and return destrided RGBA8 bytes (length = w * h * 4).
-    pub fn render_frame(&self, rotation: f32) -> Vec<u8> {
+    /// `yaw` = azimuth (radians), `pitch` = elevation (radians), `distance` = eye distance.
+    pub fn render_frame(&self, yaw: f32, pitch: f32, distance: f32) -> Vec<u8> {
         let aspect = self.w as f32 / self.h as f32;
-        let proj   = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, aspect, 0.1, 100.0);
-        let view   = Mat4::look_at_rh(
-            glam::Vec3::new(0.0, 2.0, 6.0),
-            glam::Vec3::ZERO,
-            glam::Vec3::Y,
+        let proj   = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, aspect, 0.1, 200.0);
+        let eye    = glam::Vec3::new(
+            distance * pitch.cos() * yaw.sin(),
+            distance * pitch.sin(),
+            distance * pitch.cos() * yaw.cos(),
         );
-        let mvp = proj * view * Mat4::from_rotation_y(rotation);
+        let view   = Mat4::look_at_rh(eye, glam::Vec3::ZERO, glam::Vec3::Y);
+        let mvp = proj * view;
         self.queue.write_buffer(
             &self.ubuf,
             0,
