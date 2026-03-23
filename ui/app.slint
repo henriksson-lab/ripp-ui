@@ -35,7 +35,11 @@ export component AppWindow inherits Window {
     callback navigate-to(string);
     callback snap-requested();
     callback live-toggled(bool);
+    callback camera-panned(float, float);
+    callback camera-scrolled(float);
     private property <bool> live-snap: false;
+    private property <float> cam-drag-x;
+    private property <float> cam-drag-y;
 
     private property <int> active-tab: 0;      // 0=Files, 1=Plots, 2=Help
     private property <int> active-left-tab: 0; // 0=3D View, 1=Camera
@@ -160,10 +164,37 @@ export component AppWindow inherits Window {
                 if root.active-left-tab == 1: VerticalLayout {
                     vertical-stretch: 1;
 
-                    Image {
-                        source: root.camera-image;
+                    Rectangle {
                         vertical-stretch: 1;
-                        image-fit: contain;
+                        Image {
+                            source: root.camera-image;
+                            image-fit: contain;
+                            width: 100%;
+                            height: 100%;
+                        }
+                        cam-ta := TouchArea {
+                            mouse-cursor: crosshair;
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down) {
+                                    root.cam-drag-x = self.mouse-x / 1px;
+                                    root.cam-drag-y = self.mouse-y / 1px;
+                                }
+                            }
+                            moved => {
+                                if (self.pressed) {
+                                    root.camera-panned(
+                                        self.mouse-x / 1px - root.cam-drag-x,
+                                        self.mouse-y / 1px - root.cam-drag-y
+                                    );
+                                    root.cam-drag-x = self.mouse-x / 1px;
+                                    root.cam-drag-y = self.mouse-y / 1px;
+                                }
+                            }
+                            scroll-event(e) => {
+                                root.camera-scrolled(e.delta-y / 1px);
+                                return EventResult.accept;
+                            }
+                        }
                     }
 
                     Rectangle {

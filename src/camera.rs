@@ -36,6 +36,8 @@ pub struct DeviceProp {
 enum CameraCmd {
     Snap(mpsc::Sender<CameraImage>),
     GetProps(mpsc::Sender<Vec<DeviceProp>>),
+    MoveXY(f64, f64),
+    MoveZ(f64),
 }
 
 // ── Public handle (cheaply cloneable, Send) ───────────────────────────────────
@@ -59,6 +61,16 @@ impl CameraHandle {
         self.cmd_tx.send(CameraCmd::GetProps(tx)).unwrap();
         rx.recv().unwrap()
     }
+
+    /// Move XYStage by (dx, dy) µm. Fire-and-forget.
+    pub fn move_xy(&self, dx: f64, dy: f64) {
+        let _ = self.cmd_tx.send(CameraCmd::MoveXY(dx, dy));
+    }
+
+    /// Move Z Stage by dz µm (relative). Fire-and-forget.
+    pub fn move_z(&self, dz: f64) {
+        let _ = self.cmd_tx.send(CameraCmd::MoveZ(dz));
+    }
 }
 
 /// Spawn the camera thread and return a handle to it.
@@ -71,6 +83,12 @@ pub fn start_camera_thread() -> CameraHandle {
             match cmd {
                 CameraCmd::Snap(reply)     => { let _ = reply.send(cam.snap()); }
                 CameraCmd::GetProps(reply) => { let _ = reply.send(cam.device_props()); }
+                CameraCmd::MoveXY(dx, dy) => {
+                    if let Ok((x, y)) = cam.core.get_xy_position() {
+                        let _ = cam.core.set_xy_position(x + dx, y + dy);
+                    }
+                }
+                CameraCmd::MoveZ(dz) => { let _ = cam.core.set_relative_position(dz); }
             }
         }
     });

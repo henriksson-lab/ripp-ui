@@ -148,6 +148,56 @@ fn main() {
         }
     });
 
+    let props_refreshing = Arc::new(AtomicBool::new(false));
+
+    app.on_camera_panned({
+        let cam = cam.clone();
+        let app_weak = app.as_weak();
+        let refreshing = props_refreshing.clone();
+        move |dx, dy| {
+            cam.move_xy(dx as f64, dy as f64);
+            if !refreshing.swap(true, Ordering::SeqCst) {
+                let cam = cam.clone();
+                let app_weak = app_weak.clone();
+                let refreshing = refreshing.clone();
+                std::thread::spawn(move || {
+                    let props = cam.device_props();
+                    refreshing.store(false, Ordering::SeqCst);
+                    app_weak.upgrade_in_event_loop(move |ui| {
+                        let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
+                            device: p.device.into(), property: p.property.into(), value: p.value.into(),
+                        }).collect();
+                        ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+                    }).ok();
+                });
+            }
+        }
+    });
+
+    app.on_camera_scrolled({
+        let cam = cam.clone();
+        let app_weak = app.as_weak();
+        let refreshing = props_refreshing.clone();
+        move |delta| {
+            cam.move_z(delta as f64);
+            if !refreshing.swap(true, Ordering::SeqCst) {
+                let cam = cam.clone();
+                let app_weak = app_weak.clone();
+                let refreshing = refreshing.clone();
+                std::thread::spawn(move || {
+                    let props = cam.device_props();
+                    refreshing.store(false, Ordering::SeqCst);
+                    app_weak.upgrade_in_event_loop(move |ui| {
+                        let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
+                            device: p.device.into(), property: p.property.into(), value: p.value.into(),
+                        }).collect();
+                        ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+                    }).ok();
+                });
+            }
+        }
+    });
+
     app.on_quit(|| std::process::exit(0));
 
     app.run().unwrap();

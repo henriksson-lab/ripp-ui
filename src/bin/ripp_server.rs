@@ -11,7 +11,7 @@ slint::include_modules!();
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
 use ripp::teapot::TeapotRenderer;
-use ripp::camera::{start_camera_thread, CameraHandle, CameraImage};
+use ripp::camera::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
@@ -126,6 +126,10 @@ fn run_render_loop(
     // CameraImage is Send; conversion to slint::Image happens on the render thread.
     let pending_snap: Arc<Mutex<Option<CameraImage>>> = Arc::new(Mutex::new(None));
 
+    // Pending device-props slot: move threads write here; render loop drains it.
+    let pending_props: Arc<Mutex<Option<Vec<DeviceProp>>>> = Arc::new(Mutex::new(None));
+    let props_refreshing = Arc::new(AtomicBool::new(false));
+
     ui.on_snap_requested({
         let camera = camera.clone();
         let slot = pending_snap.clone();
@@ -153,6 +157,44 @@ fn run_render_loop(
                     while live_running.load(Ordering::SeqCst) {
                         *slot.lock().unwrap() = Some(camera.snap());
                     }
+                });
+            }
+        }
+    });
+
+    ui.on_camera_panned({
+        let camera = camera.clone();
+        let slot = pending_props.clone();
+        let refreshing = props_refreshing.clone();
+        move |dx, dy| {
+            camera.move_xy(dx as f64, dy as f64);
+            if !refreshing.swap(true, Ordering::SeqCst) {
+                let camera = camera.clone();
+                let slot = slot.clone();
+                let refreshing = refreshing.clone();
+                std::thread::spawn(move || {
+                    let props = camera.device_props();
+                    refreshing.store(false, Ordering::SeqCst);
+                    *slot.lock().unwrap() = Some(props);
+                });
+            }
+        }
+    });
+
+    ui.on_camera_scrolled({
+        let camera = camera.clone();
+        let slot = pending_props.clone();
+        let refreshing = props_refreshing.clone();
+        move |delta| {
+            camera.move_z(delta as f64);
+            if !refreshing.swap(true, Ordering::SeqCst) {
+                let camera = camera.clone();
+                let slot = slot.clone();
+                let refreshing = refreshing.clone();
+                std::thread::spawn(move || {
+                    let props = camera.device_props();
+                    refreshing.store(false, Ordering::SeqCst);
+                    *slot.lock().unwrap() = Some(props);
                 });
             }
         }
@@ -220,6 +262,13 @@ fn run_render_loop(
 
         if let Some(raw) = pending_snap.lock().unwrap().take() {
             ui.set_camera_image(raw.to_slint_image());
+        }
+
+        if let Some(props) = pending_props.lock().unwrap().take() {
+            let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
+                device: p.device.into(), property: p.property.into(), value: p.value.into(),
+            }).collect();
+            ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
         }
 
         slint::platform::update_timers_and_animations();
