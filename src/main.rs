@@ -71,8 +71,8 @@ fn render_bioformats_image(
     cam_x: f64,
     cam_y: f64,
     zoom: f64,
-    brightness: f32,
-    contrast: f32,
+    lo: f32,
+    hi: f32,
 ) -> Option<slint::Image> {
     let meta = bf.reader.metadata();
     let w = meta.size_x;
@@ -83,8 +83,9 @@ fn render_bioformats_image(
     let is_rgb  = bytes.len() == (w * h * 3) as usize;
     if !is_gray && !is_rgb { return None; }
 
+    let range = (hi - lo).max(1.0);
     let apply = |v: u8| -> u8 {
-        (v as f32 * contrast + brightness * 255.0).clamp(0.0, 255.0) as u8
+        ((v as f32 - lo) / range * 255.0).clamp(0.0, 255.0) as u8
     };
 
     let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
@@ -118,30 +119,29 @@ fn render_bioformats_image(
 
 fn do_render_viewer2d(
     session: &std::rc::Rc<std::cell::RefCell<ripp::session::RippSession>>,
-    selected_obj: (i32, i32),
     tab_idx: usize,
-    brightness: f32,
-    contrast: f32,
+    lo: f32,
+    hi: f32,
     ui: &AppWindow,
 ) {
-    let (proj_id, obj_id) = selected_obj;
-    if proj_id < 0 { return; }
-
-    let (z, cam_x, cam_y, zoom) = {
+    let (proj_id, obj_id, z, cam_x, cam_y, zoom) = {
         let s = session.borrow();
         match s.tabs.get(tab_idx) {
-            Some(ripp::session::RippTab::Tab2d(t)) =>
-                (t.camera.z as u32, t.camera.x, t.camera.y, t.camera.zoom),
+            Some(ripp::session::RippTab::Tab2d(t)) => (
+                t.selected_proj_id, t.selected_obj_id,
+                t.camera.z as u32, t.camera.x, t.camera.y, t.camera.zoom,
+            ),
             _ => return,
         }
     };
+    if proj_id < 0 { return; }
 
     let image_opt = {
         let mut s = session.borrow_mut();
         if let Some(proj) = s.projects.get_mut(&(proj_id as u32)) {
             if let Some(obj) = ripp::session::find_object_mut(&mut proj.root, obj_id as u32) {
                 if let ripp::session::ProjectData::Bioformats(bf) = &mut obj.data {
-                    render_bioformats_image(bf, z, cam_x, cam_y, zoom, brightness, contrast)
+                    render_bioformats_image(bf, z, cam_x, cam_y, zoom, lo, hi)
                 } else { None }
             } else { None }
         } else { None }
@@ -197,17 +197,55 @@ fn main() {
 
     app.on_project_tree_selected(|_object_id| {});
 
-    let selected_obj: Rc<RefCell<(i32, i32)>> = Rc::new(RefCell::new((-1, -1)));
+    app.on_add_tab_3d({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move || {
+            session.borrow_mut().tabs.push(ripp::session::RippTab::Tab3d(
+                ripp::session::Tab3d { camera: ripp::session::Camera3d::default() }
+            ));
+            if let Some(ui) = app_weak.upgrade() {
+                let new_idx = (session.borrow().tabs.len() as i32) - 1;
+                ui.set_left_tabs(build_left_tabs(&session.borrow()));
+                ui.set_active_left_tab(new_idx);
+            }
+        }
+    });
+    app.on_add_tab_2d({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move || {
+            session.borrow_mut().tabs.push(ripp::session::RippTab::Tab2d(
+                ripp::session::Tab2d::default()
+            ));
+            if let Some(ui) = app_weak.upgrade() {
+                let new_idx = (session.borrow().tabs.len() as i32) - 1;
+                ui.set_left_tabs(build_left_tabs(&session.borrow()));
+                ui.set_active_left_tab(new_idx);
+            }
+        }
+    });
+    app.on_add_tab_camera({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move || {
+            session.borrow_mut().tabs.push(ripp::session::RippTab::Camera(
+                ripp::session::TabCamera { live: false }
+            ));
+            if let Some(ui) = app_weak.upgrade() {
+                let new_idx = (session.borrow().tabs.len() as i32) - 1;
+                ui.set_left_tabs(build_left_tabs(&session.borrow()));
+                ui.set_active_left_tab(new_idx);
+            }
+        }
+    });
 
     app.on_viewer2d_object_selected({
         let session = session.clone();
         let app_weak = app.as_weak();
-        let selected_obj = selected_obj.clone();
         move |project_id, object_id| {
-            *selected_obj.borrow_mut() = (project_id, object_id);
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
-                // Read image dimensions and z range, then center the camera
                 let (img_w, img_h, z_max) = {
                     let s = session.borrow();
                     if let Some(proj) = s.projects.get(&(project_id as u32)) {
@@ -220,10 +258,12 @@ fn main() {
                         } else { (0.0, 0.0, 0) }
                     } else { (0.0, 0.0, 0) }
                 };
-                // Center camera and reset z
                 {
                     let mut s = session.borrow_mut();
                     if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.selected_proj_id = project_id;
+                        t.selected_obj_id  = object_id;
+                        t.z_max            = z_max;
                         t.camera.x    = img_w / 2.0;
                         t.camera.y    = img_h / 2.0;
                         t.camera.zoom = 1.0;
@@ -232,9 +272,9 @@ fn main() {
                 }
                 ui.set_viewer2d_z(0.0);
                 ui.set_viewer2d_z_max(z_max as f32);
-                let brightness = ui.get_viewer2d_brightness();
-                let contrast = ui.get_viewer2d_contrast();
-                do_render_viewer2d(&session, (project_id, object_id), tab_idx, brightness, contrast, &ui);
+                let lo = ui.get_viewer2d_lo();
+                let hi = ui.get_viewer2d_hi();
+                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -242,7 +282,6 @@ fn main() {
     app.on_viewer2d_panned({
         let session = session.clone();
         let app_weak = app.as_weak();
-        let selected_obj = selected_obj.clone();
         move |dx, dy| {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
@@ -253,10 +292,9 @@ fn main() {
                         t.camera.y -= dy as f64 / t.camera.zoom;
                     }
                 }
-                let obj = *selected_obj.borrow();
-                let brightness = ui.get_viewer2d_brightness();
-                let contrast = ui.get_viewer2d_contrast();
-                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+                let lo = ui.get_viewer2d_lo();
+                let hi = ui.get_viewer2d_hi();
+                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -264,7 +302,6 @@ fn main() {
     app.on_viewer2d_scrolled({
         let session = session.clone();
         let app_weak = app.as_weak();
-        let selected_obj = selected_obj.clone();
         move |delta| {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
@@ -275,10 +312,9 @@ fn main() {
                         t.camera.zoom = t.camera.zoom.clamp(0.01, 100.0);
                     }
                 }
-                let obj = *selected_obj.borrow();
-                let brightness = ui.get_viewer2d_brightness();
-                let contrast = ui.get_viewer2d_contrast();
-                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+                let lo = ui.get_viewer2d_lo();
+                let hi = ui.get_viewer2d_hi();
+                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -286,14 +322,19 @@ fn main() {
     app.on_viewer2d_settings_changed({
         let session = session.clone();
         let app_weak = app.as_weak();
-        let selected_obj = selected_obj.clone();
         move || {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
-                let obj = *selected_obj.borrow();
-                let brightness = ui.get_viewer2d_brightness();
-                let contrast = ui.get_viewer2d_contrast();
-                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+                let lo = ui.get_viewer2d_lo();
+                let hi = ui.get_viewer2d_hi();
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.lo = lo;
+                        t.hi = hi;
+                    }
+                }
+                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -301,7 +342,6 @@ fn main() {
     app.on_viewer2d_z_changed({
         let session = session.clone();
         let app_weak = app.as_weak();
-        let selected_obj = selected_obj.clone();
         move |z| {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
@@ -311,10 +351,9 @@ fn main() {
                         t.camera.z = z.round() as f64;
                     }
                 }
-                let obj = *selected_obj.borrow();
-                let brightness = ui.get_viewer2d_brightness();
-                let contrast = ui.get_viewer2d_contrast();
-                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+                let lo = ui.get_viewer2d_lo();
+                let hi = ui.get_viewer2d_hi();
+                do_render_viewer2d(&session, tab_idx, lo, hi, &ui);
             }
         }
     });
@@ -403,11 +442,14 @@ fn main() {
             move || {
                 let (yaw, pitch, distance) = {
                     let s = session.borrow();
-                    s.tabs.iter().find_map(|t| {
-                        if let ripp::session::RippTab::Tab3d(t3) = t {
-                            Some((t3.camera.yaw, t3.camera.pitch, t3.camera.distance))
-                        } else { None }
-                    }).unwrap_or((0.0, 0.3, 6.0))
+                    let tab_idx = app_weak.upgrade()
+                        .map(|u| u.get_active_left_tab() as usize)
+                        .unwrap_or(0);
+                    match s.tabs.get(tab_idx) {
+                        Some(ripp::session::RippTab::Tab3d(t3)) =>
+                            (t3.camera.yaw, t3.camera.pitch, t3.camera.distance),
+                        _ => return,
+                    }
                 };
                 let pixels = renderer.render_frame(yaw, pitch, distance);
 
@@ -423,26 +465,30 @@ fn main() {
 
     app.on_viewer3d_panned({
         let session = session.clone();
+        let app_weak = app.as_weak();
         move |dx, dy| {
-            let mut s = session.borrow_mut();
-            if let Some(t3) = s.tabs.iter_mut().find_map(|t| {
-                if let ripp::session::RippTab::Tab3d(t3) = t { Some(t3) } else { None }
-            }) {
-                t3.camera.yaw   -= dx * 0.005;
-                t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let mut s = session.borrow_mut();
+                if let Some(ripp::session::RippTab::Tab3d(t3)) = s.tabs.get_mut(tab_idx) {
+                    t3.camera.yaw   -= dx * 0.005;
+                    t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
+                }
             }
         }
     });
 
     app.on_viewer3d_scrolled({
         let session = session.clone();
+        let app_weak = app.as_weak();
         move |delta| {
-            let mut s = session.borrow_mut();
-            if let Some(t3) = s.tabs.iter_mut().find_map(|t| {
-                if let ripp::session::RippTab::Tab3d(t3) = t { Some(t3) } else { None }
-            }) {
-                t3.camera.distance = (t3.camera.distance * (-(delta * 0.005_f32)).exp())
-                    .clamp(0.5, 100.0);
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let mut s = session.borrow_mut();
+                if let Some(ripp::session::RippTab::Tab3d(t3)) = s.tabs.get_mut(tab_idx) {
+                    t3.camera.distance = (t3.camera.distance * (-(delta * 0.005_f32)).exp())
+                        .clamp(0.5, 100.0);
+                }
             }
         }
     });
@@ -474,27 +520,102 @@ fn main() {
 
     // Live (continuous) snap
     let live_running = Arc::new(AtomicBool::new(false));
-    app.on_live_toggled({
+
+    // Factored out so on_left_tab_activated can also start the loop
+    let start_live = {
         let cam = cam.clone();
         let app_weak = app.as_weak();
         let live_running = live_running.clone();
+        move || {
+            if live_running.swap(true, Ordering::SeqCst) { return; } // already running
+            let cam = cam.clone();
+            let app_weak = app_weak.clone();
+            let live_running = live_running.clone();
+            std::thread::spawn(move || {
+                while live_running.load(Ordering::SeqCst) {
+                    let raw = cam.snap();
+                    let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+                    if app_weak.upgrade_in_event_loop(move |ui| {
+                        ui.set_camera_image(raw.to_slint_image());
+                        let _ = done_tx.send(());
+                    }).is_err() { break; }
+                    done_rx.recv().ok();
+                }
+            });
+        }
+    };
+
+    app.on_live_toggled({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let live_running = live_running.clone();
+        let start_live = start_live.clone();
         move |enabled| {
-            live_running.store(enabled, Ordering::SeqCst);
+            // Save per-tab
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let mut s = session.borrow_mut();
+                if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
+                    tc.live = enabled;
+                }
+            }
             if enabled {
-                let cam = cam.clone();
-                let app_weak = app_weak.clone();
-                let live_running = live_running.clone();
-                std::thread::spawn(move || {
-                    while live_running.load(Ordering::SeqCst) {
-                        let raw = cam.snap();
-                        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
-                        if app_weak.upgrade_in_event_loop(move |ui| {
-                            ui.set_camera_image(raw.to_slint_image());
-                            let _ = done_tx.send(());
-                        }).is_err() { break; }
-                        done_rx.recv().ok(); // wait until the frame is actually displayed
+                start_live();
+            } else {
+                live_running.store(false, Ordering::SeqCst);
+            }
+        }
+    });
+
+    // Restore per-tab state when the active tab changes
+    let prev_tab_idx: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+    app.on_left_tab_activated({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let live_running = live_running.clone();
+        let start_live = start_live.clone();
+        let prev_tab_idx = prev_tab_idx.clone();
+        move |new_idx| {
+            let new_idx = new_idx as usize;
+            let old_idx = *prev_tab_idx.borrow();
+            *prev_tab_idx.borrow_mut() = new_idx;
+
+            // Save live state of the old camera tab and stop the loop
+            {
+                let mut s = session.borrow_mut();
+                if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs.get_mut(old_idx) {
+                    tc.live = live_running.load(Ordering::SeqCst);
+                    live_running.store(false, Ordering::SeqCst);
+                }
+            }
+
+            if let Some(ui) = app_weak.upgrade() {
+                let s = session.borrow();
+                match s.tabs.get(new_idx) {
+                    Some(ripp::session::RippTab::Tab2d(t)) => {
+                        ui.set_viewer2d_lo(t.lo);
+                        ui.set_viewer2d_hi(t.hi);
+                        ui.set_viewer2d_z(t.camera.z as f32);
+                        ui.set_viewer2d_z_max(t.z_max as f32);
+                        let has_obj = t.selected_proj_id >= 0;
+                        if !has_obj {
+                            ui.set_viewer2d_image_loaded(false);
+                        }
+                        // Re-render needs mutable borrow — drop shared borrow first
+                        let (lo, hi) = (t.lo, t.hi);
+                        drop(s);
+                        if has_obj {
+                            do_render_viewer2d(&session, new_idx, lo, hi, &ui);
+                        }
                     }
-                });
+                    Some(ripp::session::RippTab::Camera(tc)) => {
+                        let want_live = tc.live;
+                        ui.set_live_snap(want_live);
+                        drop(s);
+                        if want_live { start_live(); }
+                    }
+                    _ => {}
+                }
             }
         }
     });

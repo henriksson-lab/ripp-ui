@@ -35,9 +35,29 @@ pub struct Tab3d {
 
 pub struct Tab2d {
     pub camera: Camera2d,
+    pub selected_proj_id: i32,
+    pub selected_obj_id:  i32,
+    pub lo:               f32,
+    pub hi:               f32,
+    pub z_max:            i32,
 }
 
-pub struct TabCamera;
+impl Default for Tab2d {
+    fn default() -> Self {
+        Self {
+            camera: Camera2d { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 },
+            selected_proj_id: -1,
+            selected_obj_id:  -1,
+            lo: 0.0,
+            hi: 255.0,
+            z_max: 0,
+        }
+    }
+}
+
+pub struct TabCamera {
+    pub live: bool,
+}
 
 pub enum RippTab {
     Tab3d(Tab3d),
@@ -68,8 +88,8 @@ impl RippSession {
             projects: BTreeMap::new(),
             tabs: vec![
                 RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
-                RippTab::Tab2d(Tab2d { camera: Camera2d { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 } }),
-                RippTab::Camera(TabCamera),
+                RippTab::Tab2d(Tab2d::default()),
+                RippTab::Camera(TabCamera { live: false }),
             ],
             next_id: 0,
         }

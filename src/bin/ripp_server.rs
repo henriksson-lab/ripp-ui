@@ -181,6 +181,9 @@ fn run_render_loop(
     ui.on_viewer2d_scrolled(|_delta| {});
     ui.on_viewer2d_settings_changed(|| {});
     ui.on_viewer2d_z_changed(|_z| {});
+    ui.on_add_tab_3d(|| {});
+    ui.on_add_tab_2d(|| {});
+    ui.on_add_tab_camera(|| {});
     ui.on_viewer3d_panned(|_dx, _dy| {});
     ui.on_viewer3d_scrolled(|_delta| {});
     ui.on_open_file(|_filename| {});
