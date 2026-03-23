@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use slint::ComponentHandle;
 use crate::{AppWindow, DevicePropEntry};
-use crate::session::{RippSession, RippTab};
-use crate::camera::{CameraHandle, CameraImage};
+use crate::session::{RippSession, RippTab, ColorMappingRange};
+use crate::micromanager::{CameraHandle, CameraImage};
 
 pub fn register(
     app: &AppWindow,
@@ -15,7 +15,7 @@ pub fn register(
     // ── Initial state ─────────────────────────────────────────────────────────
     let snap = cam.snap();
     *last_camera_frame.lock().unwrap() = Some((snap.data.clone(), snap.width, snap.height));
-    app.set_camera_image(snap.to_slint_image(0.0, 255.0));
+    app.set_camera_image(snap.to_slint_image(ColorMappingRange::default()));
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| {
         DevicePropEntry { device: p.device.into(), property: p.property.into(), value: p.value.into() }
@@ -30,18 +30,16 @@ pub fn register(
         move || {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
-                let lo = ui.get_camera_lo();
-                let hi = ui.get_camera_hi();
+                let color = ColorMappingRange { lo: ui.get_camera_lo(), hi: ui.get_camera_hi() };
                 {
                     let mut s = session.borrow_mut();
                     if let Some(RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
-                        tc.lo = lo;
-                        tc.hi = hi;
+                        tc.color = color;
                     }
                 }
                 if let Some((ref data, w, h)) = *lcf.lock().unwrap() {
                     let img = CameraImage { data: data.clone(), width: w, height: h };
-                    ui.set_camera_image(img.to_slint_image(lo, hi));
+                    ui.set_camera_image(img.to_slint_image(color));
                 }
             }
         }

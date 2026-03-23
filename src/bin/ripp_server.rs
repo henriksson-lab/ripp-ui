@@ -9,8 +9,8 @@
 
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
-use ripp::teapot::TeapotRenderer;
-use ripp::camera::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
+use ripp::renderer3d::Renderer3d;
+use ripp::micromanager::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
 use ripp::{AppWindow, DevicePropEntry};
 use ripp::app_logic::AppLogic;
 use futures::stream;
@@ -159,7 +159,7 @@ fn run_render_loop(
     });
 
     // ── Render loop ──────────────────────────────────────────────────────────
-    let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
+    let teapot = Renderer3d::new(TEAPOT_W, TEAPOT_H);
     let (mut w, mut h) = *viewport.lock().unwrap();
     let mut buf = vec![Rgb565Pixel::default(); (w * h) as usize];
     let mut last_print  = Instant::now();
@@ -228,7 +228,7 @@ fn run_render_loop(
             let hi = ui.get_camera_hi();
             *logic.last_camera_frame.lock().unwrap() =
                 Some((raw.data.clone(), raw.width, raw.height));
-            ui.set_camera_image(raw.to_slint_image(lo, hi));
+            ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
         }
 
         // Drain pending device props.
@@ -244,15 +244,19 @@ fn run_render_loop(
         let t0 = Instant::now();
 
         // Render teapot → Slint image property.
-        let (yaw, pitch, distance) = {
+        let camera = {
             let s = logic.session.borrow();
             s.tabs.iter().find_map(|t| {
                 if let ripp::session::RippTab::Tab3d(t3) = t {
-                    Some((t3.camera.yaw, t3.camera.pitch, t3.camera.distance))
+                    Some(ripp::session::Camera3d {
+                        yaw:      t3.camera.yaw,
+                        pitch:    t3.camera.pitch,
+                        distance: t3.camera.distance,
+                    })
                 } else { None }
-            }).unwrap_or((0.0, 0.3, 6.0))
+            }).unwrap_or_default()
         };
-        let pixels = teapot.render_frame(yaw, pitch, distance);
+        let pixels = teapot.render_frame(&camera);
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
         pb.make_mut_bytes().copy_from_slice(&pixels);
         ui.set_teapot_image(slint::Image::from_rgba8(pb));

@@ -1,4 +1,17 @@
 use std::collections::BTreeMap;
+use glam::Mat4;
+
+// --- color mapping ---
+
+#[derive(Copy, Clone)]
+pub struct ColorMappingRange {
+    pub lo: f32,
+    pub hi: f32,
+}
+
+impl Default for ColorMappingRange {
+    fn default() -> Self { Self { lo: 0.0, hi: 255.0 } }
+}
 
 // --- session level ---
 
@@ -22,6 +35,20 @@ impl Default for Camera3d {
     }
 }
 
+impl Camera3d {
+    /// Compute view * projection matrix for this camera position.
+    pub fn view_matrix(&self, aspect: f32) -> Mat4 {
+        let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, aspect, 0.1, 200.0);
+        let eye  = glam::Vec3::new(
+            self.distance * self.pitch.cos() * self.yaw.sin(),
+            self.distance * self.pitch.sin(),
+            self.distance * self.pitch.cos() * self.yaw.cos(),
+        );
+        let view = Mat4::look_at_rh(eye, glam::Vec3::ZERO, glam::Vec3::Y);
+        proj * view
+    }
+}
+
 pub struct Camera2d {
     pub x: f64,
     pub y: f64,
@@ -37,8 +64,7 @@ pub struct Tab2d {
     pub camera: Camera2d,
     pub selected_proj_id: i32,
     pub selected_obj_id:  i32,
-    pub lo:               f32,
-    pub hi:               f32,
+    pub color:            ColorMappingRange,
     pub z_max:            i32,
 }
 
@@ -48,17 +74,15 @@ impl Default for Tab2d {
             camera: Camera2d { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 },
             selected_proj_id: -1,
             selected_obj_id:  -1,
-            lo: 0.0,
-            hi: 255.0,
+            color: ColorMappingRange::default(),
             z_max: 0,
         }
     }
 }
 
 pub struct TabCamera {
-    pub live: bool,
-    pub lo: f32,
-    pub hi: f32,
+    pub live:  bool,
+    pub color: ColorMappingRange,
 }
 
 pub enum RippTab {
@@ -91,7 +115,7 @@ impl RippSession {
             tabs: vec![
                 RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
                 RippTab::Tab2d(Tab2d::default()),
-                RippTab::Camera(TabCamera { live: false, lo: 0.0, hi: 255.0 }),
+                RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
             ],
             next_id: 0,
         }

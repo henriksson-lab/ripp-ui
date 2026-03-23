@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab, ProjectData, find_object_ref, find_object_mut};
-use crate::viewer2d::Viewer2dRenderer;
+use crate::session::{RippSession, RippTab, ProjectData, ColorMappingRange, find_object_ref, find_object_mut};
+use crate::renderer2d::Viewer2dRenderer;
 
 // ── GPU helpers ───────────────────────────────────────────────────────────────
 
@@ -43,8 +43,7 @@ pub fn render(
     session: &Rc<RefCell<RippSession>>,
     viewer2d: &Viewer2dRenderer,
     tab_idx: usize,
-    lo: f32,
-    hi: f32,
+    color: ColorMappingRange,
     ui: &AppWindow,
 ) {
     let (cam_x, cam_y, zoom) = {
@@ -54,7 +53,7 @@ pub fn render(
             _ => return,
         }
     };
-    if let Some(pixels) = viewer2d.render(cam_x, cam_y, zoom, lo, hi) {
+    if let Some(pixels) = viewer2d.render(cam_x, cam_y, zoom, color) {
         let w = viewer2d.out_w();
         let h = viewer2d.out_h();
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
@@ -104,10 +103,9 @@ pub fn register(
                 }
                 ui.set_viewer2d_z(0.0);
                 ui.set_viewer2d_z_max(z_max as f32);
-                let lo = ui.get_viewer2d_lo();
-                let hi = ui.get_viewer2d_hi();
+                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
                 upload(&session, &mut viewer2d.borrow_mut(), tab_idx);
-                render(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
+                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
         }
     });
@@ -126,9 +124,8 @@ pub fn register(
                         t.camera.y -= dy as f64 / t.camera.zoom;
                     }
                 }
-                let lo = ui.get_viewer2d_lo();
-                let hi = ui.get_viewer2d_hi();
-                render(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
+                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
         }
     });
@@ -147,9 +144,8 @@ pub fn register(
                         t.camera.zoom = t.camera.zoom.clamp(0.01, 100.0);
                     }
                 }
-                let lo = ui.get_viewer2d_lo();
-                let hi = ui.get_viewer2d_hi();
-                render(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
+                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
         }
     });
@@ -161,16 +157,14 @@ pub fn register(
         move || {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
-                let lo = ui.get_viewer2d_lo();
-                let hi = ui.get_viewer2d_hi();
+                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
                 {
                     let mut s = session.borrow_mut();
                     if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
-                        t.lo = lo;
-                        t.hi = hi;
+                        t.color = color;
                     }
                 }
-                render(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
+                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
         }
     });
@@ -188,10 +182,9 @@ pub fn register(
                         t.camera.z = z.round() as f64;
                     }
                 }
-                let lo = ui.get_viewer2d_lo();
-                let hi = ui.get_viewer2d_hi();
+                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
                 upload(&session, &mut viewer2d.borrow_mut(), tab_idx);
-                render(&session, &viewer2d.borrow(), tab_idx, lo, hi, &ui);
+                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
         }
     });

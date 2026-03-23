@@ -4,8 +4,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use crate::{AppWindow, LeftTabEntry, ProjectTreeEntry};
 use crate::session::{RippSession, flatten_session};
-use crate::viewer2d::Viewer2dRenderer;
-use crate::camera::CameraHandle;
+use crate::renderer2d::Viewer2dRenderer;
+use crate::micromanager::CameraHandle;
 use crate::panes;
 
 // ── Shared model builders (used by multiple panes) ────────────────────────────

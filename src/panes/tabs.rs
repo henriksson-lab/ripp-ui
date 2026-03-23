@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use slint::ComponentHandle;
 use crate::AppWindow;
 use crate::session::{RippSession, RippTab, Tab3d, Tab2d, TabCamera, Camera3d};
-use crate::viewer2d::Viewer2dRenderer;
+use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_left_tabs;
 use crate::panes::viewer2d as v2d;
 
@@ -71,7 +71,7 @@ pub fn register<F: Fn() + 'static>(
         let session  = session.clone();
         let app_weak = app.as_weak();
         move || {
-            session.borrow_mut().tabs.push(RippTab::Camera(TabCamera { live: false, lo: 0.0, hi: 255.0 }));
+            session.borrow_mut().tabs.push(RippTab::Camera(TabCamera { live: false, color: crate::session::ColorMappingRange::default() }));
             if let Some(ui) = app_weak.upgrade() {
                 let new_idx = (session.borrow().tabs.len() as i32) - 1;
                 ui.set_left_tabs(build_left_tabs(&session.borrow()));
@@ -105,25 +105,25 @@ pub fn register<F: Fn() + 'static>(
                 let s = session.borrow();
                 match s.tabs.get(new_idx) {
                     Some(RippTab::Tab2d(t)) => {
-                        ui.set_viewer2d_lo(t.lo);
-                        ui.set_viewer2d_hi(t.hi);
+                        ui.set_viewer2d_lo(t.color.lo);
+                        ui.set_viewer2d_hi(t.color.hi);
                         ui.set_viewer2d_z(t.camera.z as f32);
                         ui.set_viewer2d_z_max(t.z_max as f32);
                         let has_obj = t.selected_proj_id >= 0;
                         if !has_obj { ui.set_viewer2d_image_loaded(false); }
-                        let (lo, hi) = (t.lo, t.hi);
+                        let color = t.color;
                         drop(s);
                         if has_obj {
                             v2d::upload(&session, &mut viewer2d.borrow_mut(), new_idx);
-                            v2d::render(&session, &viewer2d.borrow(), new_idx, lo, hi, &ui);
+                            v2d::render(&session, &viewer2d.borrow(), new_idx, color, &ui);
                         }
                     }
                     Some(RippTab::Camera(tc)) => {
                         let want_live = tc.live;
-                        let (lo, hi) = (tc.lo, tc.hi);
+                        let color = tc.color;
                         ui.set_live_snap(want_live);
-                        ui.set_camera_lo(lo);
-                        ui.set_camera_hi(hi);
+                        ui.set_camera_lo(color.lo);
+                        ui.set_camera_hi(color.hi);
                         drop(s);
                         if want_live { start_live(); }
                     }

@@ -1,7 +1,8 @@
-/// Standalone wgpu offscreen teapot renderer shared by the desktop and server binaries.
+/// Standalone wgpu offscreen 3D renderer shared by the desktop and server binaries.
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use wgpu::util::DeviceExt;
+use crate::session::Camera3d;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -18,7 +19,7 @@ struct Uniforms {
     mvp: [[f32; 4]; 4],
 }
 
-pub struct TeapotRenderer {
+pub struct Renderer3d {
     w:           u32,
     h:           u32,
     bpr:         u32, // bytes-per-row (wgpu-aligned)
@@ -36,12 +37,12 @@ pub struct TeapotRenderer {
     index_count: u32,
 }
 
-impl TeapotRenderer {
+impl Renderer3d {
     pub fn new(w: u32, h: u32) -> Self {
         futures::executor::block_on(Self::new_async(w, h))
     }
 
-    async fn new_async(w: u32, h: u32) -> Self {
+    async fn new_async(w: u32, h: u32) -> Renderer3d {
         // wgpu requires bytes-per-row to be a multiple of 256
         let bpr = (w * 4 + 255) / 256 * 256;
 
@@ -220,17 +221,9 @@ impl TeapotRenderer {
     }
 
     /// Render one frame and return destrided RGBA8 bytes (length = w * h * 4).
-    /// `yaw` = azimuth (radians), `pitch` = elevation (radians), `distance` = eye distance.
-    pub fn render_frame(&self, yaw: f32, pitch: f32, distance: f32) -> Vec<u8> {
+    pub fn render_frame(&self, cam: &Camera3d) -> Vec<u8> {
         let aspect = self.w as f32 / self.h as f32;
-        let proj   = Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, aspect, 0.1, 200.0);
-        let eye    = glam::Vec3::new(
-            distance * pitch.cos() * yaw.sin(),
-            distance * pitch.sin(),
-            distance * pitch.cos() * yaw.cos(),
-        );
-        let view   = Mat4::look_at_rh(eye, glam::Vec3::ZERO, glam::Vec3::Y);
-        let mvp = proj * view;
+        let mvp    = cam.view_matrix(aspect);
         self.queue.write_buffer(
             &self.ubuf,
             0,

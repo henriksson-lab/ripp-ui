@@ -3,8 +3,8 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use slint::ComponentHandle;
 use ripp::{AppWindow, DevicePropEntry};
 use ripp::app_logic::AppLogic;
-use ripp::teapot::TeapotRenderer;
-use ripp::camera::start_camera_thread;
+use ripp::renderer3d::Renderer3d;
+use ripp::micromanager::start_camera_thread;
 
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;
@@ -43,7 +43,7 @@ fn main() {
                         let lo = ui.get_camera_lo();
                         let hi = ui.get_camera_hi();
                         *lcf.lock().unwrap() = Some(frame);
-                        ui.set_camera_image(raw.to_slint_image(lo, hi));
+                        ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
                         let _ = done_tx.send(());
                     }).is_err() { break; }
                     done_rx.recv().ok();
@@ -73,7 +73,7 @@ fn main() {
                     let lo = ui.get_camera_lo();
                     let hi = ui.get_camera_hi();
                     *last_camera_frame.lock().unwrap() = Some(frame);
-                    ui.set_camera_image(raw.to_slint_image(lo, hi));
+                    ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
                 }).ok();
             });
         }
@@ -120,7 +120,7 @@ fn main() {
     });
 
     // ── Teapot rendering timer ────────────────────────────────────────────────
-    let renderer = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
+    let renderer = Renderer3d::new(TEAPOT_W, TEAPOT_H);
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -132,15 +132,20 @@ fn main() {
                 let tab_idx = app_weak.upgrade()
                     .map(|u: AppWindow| u.get_active_left_tab() as usize)
                     .unwrap_or(0);
-                let (yaw, pitch, distance) = {
+                let camera = {
                     let s = session.borrow();
                     match s.tabs.get(tab_idx) {
-                        Some(ripp::session::RippTab::Tab3d(t3)) =>
-                            (t3.camera.yaw, t3.camera.pitch, t3.camera.distance),
+                        Some(ripp::session::RippTab::Tab3d(t3)) => {
+                            ripp::session::Camera3d {
+                                yaw:      t3.camera.yaw,
+                                pitch:    t3.camera.pitch,
+                                distance: t3.camera.distance,
+                            }
+                        }
                         _ => return,
                     }
                 };
-                let pixels = renderer.render_frame(yaw, pitch, distance);
+                let pixels = renderer.render_frame(&camera);
                 let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
                 pb.make_mut_bytes().copy_from_slice(&pixels);
                 if let Some(ui) = app_weak.upgrade() {
@@ -156,7 +161,7 @@ fn main() {
 
 /// Spawn a background thread to refresh device props; guard against overlapping refreshes.
 fn spawn_props_refresh(
-    cam:        &ripp::camera::CameraHandle,
+    cam:        &ripp::micromanager::CameraHandle,
     app_weak:   &slint::Weak<AppWindow>,
     refreshing: &Arc<AtomicBool>,
 ) {

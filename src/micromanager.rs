@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use micromanager::CMMCore;
 use micromanager::adapters::demo::DemoAdapter;
 use crate::sim_adapter::SimAdapter;
+use crate::session::ColorMappingRange;
 
 // ── Public data types ─────────────────────────────────────────────────────────
 
@@ -12,9 +13,10 @@ pub struct CameraImage {
 }
 
 impl CameraImage {
-    /// Convert GRAY8 → RGBA8 and wrap as a Slint `Image`, applying lo/hi mapping.
-    pub fn to_slint_image(&self, lo: f32, hi: f32) -> slint::Image {
-        let range = (hi - lo).max(1.0);
+    /// Convert GRAY8 → RGBA8 and wrap as a Slint `Image`, applying color mapping.
+    pub fn to_slint_image(&self, color: ColorMappingRange) -> slint::Image {
+        let range = (color.hi - color.lo).max(1.0);
+        let lo = color.lo;
         let apply = |g: u8| -> u8 {
             ((g as f32 - lo) / range * 255.0).clamp(0.0, 255.0) as u8
         };
@@ -85,7 +87,7 @@ impl CameraHandle {
 pub fn start_camera_thread(use_sim: bool) -> CameraHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel::<CameraCmd>();
     std::thread::spawn(move || {
-        let mut cam = DemoCamera::new(use_sim);
+        let mut cam = MicromanagerSession::new(use_sim);
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
                 CameraCmd::Snap(reply)     => { let _ = reply.send(cam.snap()); }
@@ -104,11 +106,11 @@ pub fn start_camera_thread(use_sim: bool) -> CameraHandle {
 
 // ── Internal camera wrapper (owns CMMCore) ────────────────────────────────────
 
-struct DemoCamera {
+struct MicromanagerSession {
     core: CMMCore,
 }
 
-impl DemoCamera {
+impl MicromanagerSession {
     fn new(use_sim: bool) -> Self {
         let mut core = CMMCore::new();
         core.register_adapter(Box::new(DemoAdapter));

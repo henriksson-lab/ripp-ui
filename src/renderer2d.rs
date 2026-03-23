@@ -9,6 +9,7 @@
 /// TeapotRenderer's device.
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
+use crate::session::ColorMappingRange;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -146,7 +147,7 @@ impl Viewer2dRenderer {
 
     /// Render current frame with given camera/level parameters.
     /// Returns `None` if no image has been uploaded yet.
-    pub fn render(&self, cam_x: f64, cam_y: f64, zoom: f64, lo: f32, hi: f32) -> Option<Vec<u8>> {
+    pub fn render(&self, cam_x: f64, cam_y: f64, zoom: f64, color: ColorMappingRange) -> Option<Vec<u8>> {
         let gpu = self.gpu.as_ref()?;
         let bind_group = gpu.bind_group.as_ref()?;
         let color_view = gpu.color_view.as_ref()?;
@@ -161,8 +162,8 @@ impl Viewer2dRenderer {
                 cam_x: cam_x as f32,
                 cam_y: cam_y as f32,
                 zoom:  zoom as f32,
-                lo,
-                hi,
+                lo:    color.lo,
+                hi:    color.hi,
                 out_w: gpu.out_w as f32,
                 out_h: gpu.out_h as f32,
                 _pad:  0.0,
