@@ -4,12 +4,36 @@ use std::collections::BTreeMap;
 
 pub struct RippSession {
     pub projects: BTreeMap<u32, Project>,
+    pub tabs: Vec<RippTab>,
     next_id: u32,
+}
+
+// --- tabs ---
+
+pub struct Camera2d {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub zoom: f64,
+}
+
+pub struct Tab3d;
+
+pub struct Tab2d {
+    pub camera: Camera2d,
+}
+
+pub struct TabCamera;
+
+pub enum RippTab {
+    Tab3d(Tab3d),
+    Tab2d(Tab2d),
+    Camera(TabCamera),
 }
 
 impl RippSession {
     pub fn new() -> Self {
-        Self { projects: BTreeMap::new(), next_id: 0 }
+        Self { projects: BTreeMap::new(), tabs: Vec::new(), next_id: 0 }
     }
 
     pub fn add_project(&mut self, name: impl Into<String>) -> u32 {
