@@ -1,5 +1,10 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
+use std::sync::{Arc, atomic::AtomicBool};
 use glam::Mat4;
+use crate::AppWindow;
+use crate::renderer2d::Viewer2dRenderer;
 
 // --- color mapping ---
 
@@ -103,19 +108,46 @@ pub enum RippTab {
     Camera(TabCamera),
 }
 
+// ── Tab plugin trait ──────────────────────────────────────────────────────────
+
+pub struct ActivationContext {
+    pub session:      Rc<RefCell<RippSession>>,
+    pub viewer2d:     Rc<RefCell<Viewer2dRenderer>>,
+    pub start_live:   Rc<dyn Fn()>,
+    pub live_running: Arc<AtomicBool>,
+    pub tab_idx:      usize,
+}
+
+pub trait TabPane {
+    fn label(&self)   -> &str;
+    fn type_id(&self) -> i32;
+    fn on_deactivating(&mut self, live_running: &Arc<AtomicBool>);
+    fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext);
+}
+
 impl RippTab {
-    pub fn type_id(&self) -> i32 {
+    pub fn type_id(&self) -> i32  { self.as_pane().type_id() }
+    pub fn label(&self)   -> &str { self.as_pane().label() }
+
+    pub fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
         match self {
-            RippTab::Tab3d(_)  => 0,
-            RippTab::Tab2d(_)  => 1,
-            RippTab::Camera(_) => 2,
+            Self::Tab3d(t)  => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Tab2d(t)  => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Camera(t) => (t as &dyn TabPane).on_activated(ui, ctx),
         }
     }
-    pub fn label(&self) -> &str {
+    pub fn on_deactivating(&mut self, lr: &Arc<AtomicBool>) {
         match self {
-            RippTab::Tab3d(_)  => "3D View",
-            RippTab::Tab2d(_)  => "2D Viewer",
-            RippTab::Camera(_) => "Camera",
+            Self::Tab3d(t)  => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Tab2d(t)  => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Camera(t) => (t as &mut dyn TabPane).on_deactivating(lr),
+        }
+    }
+    fn as_pane(&self) -> &dyn TabPane {
+        match self {
+            Self::Tab3d(t)  => t,
+            Self::Tab2d(t)  => t,
+            Self::Camera(t) => t,
         }
     }
 }

@@ -3,8 +3,24 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use slint::ComponentHandle;
 use crate::{AppWindow, DevicePropEntry};
-use crate::session::{RippSession, RippTab, ColorMappingRange};
+use std::sync::atomic::{AtomicBool, Ordering};
+use crate::session::{RippSession, RippTab, TabCamera, ColorMappingRange, TabPane, ActivationContext};
 use crate::micromanager::{CameraHandle, CameraImage};
+
+impl TabPane for TabCamera {
+    fn label(&self)   -> &str { "Camera" }
+    fn type_id(&self) -> i32  { 2 }
+    fn on_deactivating(&mut self, live_running: &Arc<AtomicBool>) {
+        self.live = live_running.load(Ordering::SeqCst);
+        live_running.store(false, Ordering::SeqCst);
+    }
+    fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
+        ui.set_live_snap(self.live);
+        ui.set_camera_lo(self.color.lo);
+        ui.set_camera_hi(self.color.hi);
+        if self.live { (ctx.start_live)(); }
+    }
+}
 
 pub fn register(
     app: &AppWindow,

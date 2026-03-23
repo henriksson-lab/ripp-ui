@@ -1,13 +1,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab, Tab3d, Tab2d, TabCamera, Camera3d};
+use crate::session::{RippSession, RippTab, Tab3d, Tab2d, TabCamera, Camera3d, ActivationContext};
 use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_left_tabs;
-use crate::panes::viewer2d as v2d;
 
 fn add_tab(
     session:  &Rc<RefCell<RippSession>>,
@@ -84,43 +83,19 @@ pub fn register<F: Fn() + 'static>(
             let old_idx = *prev_tab.borrow();
             *prev_tab.borrow_mut() = new_idx;
 
-            // Save live state on old Camera tab and stop the loop
-            {
-                let mut s = session.borrow_mut();
-                if let Some(RippTab::Camera(tc)) = s.tabs.get_mut(old_idx) {
-                    tc.live = live_running.load(Ordering::SeqCst);
-                    live_running.store(false, Ordering::SeqCst);
-                }
-            }
+            session.borrow_mut().tabs.get_mut(old_idx)
+                .map(|t| t.on_deactivating(&live_running));
 
             if let Some(ui) = app_weak.upgrade() {
-                let s = session.borrow();
-                match s.tabs.get(new_idx) {
-                    Some(RippTab::Tab2d(t)) => {
-                        ui.set_viewer2d_lo(t.color.lo);
-                        ui.set_viewer2d_hi(t.color.hi);
-                        ui.set_viewer2d_z(t.camera.z as f32);
-                        ui.set_viewer2d_z_max(t.z_max as f32);
-                        let has_obj = t.selected_proj_id >= 0;
-                        if !has_obj { ui.set_viewer2d_image_loaded(false); }
-                        let color = t.color;
-                        drop(s);
-                        if has_obj {
-                            v2d::upload(&session, &mut viewer2d.borrow_mut(), new_idx);
-                            v2d::render(&session, &viewer2d.borrow(), new_idx, color, &ui);
-                        }
-                    }
-                    Some(RippTab::Camera(tc)) => {
-                        let want_live = tc.live;
-                        let color = tc.color;
-                        ui.set_live_snap(want_live);
-                        ui.set_camera_lo(color.lo);
-                        ui.set_camera_hi(color.hi);
-                        drop(s);
-                        if want_live { start_live(); }
-                    }
-                    _ => {}
-                }
+                let ctx = ActivationContext {
+                    session:      session.clone(),
+                    viewer2d:     viewer2d.clone(),
+                    start_live:   start_live.clone(),
+                    live_running: live_running.clone(),
+                    tab_idx:      new_idx,
+                };
+                session.borrow().tabs.get(new_idx)
+                    .map(|t| t.on_activated(&ui, &ctx));
             }
         }
     });

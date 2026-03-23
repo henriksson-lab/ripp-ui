@@ -2,7 +2,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab};
+use std::sync::{Arc, atomic::AtomicBool};
+use crate::session::{RippSession, RippTab, Tab3d, TabPane, ActivationContext};
+
+impl TabPane for Tab3d {
+    fn label(&self)   -> &str { "3D View" }
+    fn type_id(&self) -> i32  { 0 }
+    fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
+    fn on_activated(&self, _: &AppWindow, _: &ActivationContext) {}
+}
 
 pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
     app.on_viewer3d_panned({

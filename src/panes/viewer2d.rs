@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab, ProjectData, Camera2d, ColorMappingRange, find_object_ref, find_object_mut};
+use std::sync::{Arc, atomic::AtomicBool};
+use crate::session::{RippSession, RippTab, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, ActivationContext, find_object_ref, find_object_mut};
 use crate::renderer2d::Viewer2dRenderer;
 
 // ── GPU helpers ───────────────────────────────────────────────────────────────
@@ -59,6 +60,24 @@ pub fn render(
         pb.make_mut_bytes().copy_from_slice(&pixels);
         ui.set_viewer2d_image(slint::Image::from_rgba8(pb));
         ui.set_viewer2d_image_loaded(true);
+    }
+}
+
+impl TabPane for Tab2d {
+    fn label(&self)   -> &str { "2D Viewer" }
+    fn type_id(&self) -> i32  { 1 }
+    fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
+    fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
+        ui.set_viewer2d_lo(self.color.lo);
+        ui.set_viewer2d_hi(self.color.hi);
+        ui.set_viewer2d_z(self.camera.z as f32);
+        ui.set_viewer2d_z_max(self.z_max as f32);
+        if self.selected_proj_id < 0 {
+            ui.set_viewer2d_image_loaded(false);
+        } else {
+            upload(&ctx.session, &mut ctx.viewer2d.borrow_mut(), ctx.tab_idx);
+            render(&ctx.session, &ctx.viewer2d.borrow(), ctx.tab_idx, self.color, ui);
+        }
     }
 }
 
