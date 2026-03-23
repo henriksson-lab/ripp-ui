@@ -166,6 +166,8 @@ export component AppWindow inherits Window {
     private property <float> v2d-drag-x;
     private property <float> v2d-drag-y;
 
+    private property <int> right-top-tab: 0;   // 0=Cam prop, 1=Part. tracking
+
     // Column widths for device properties table
     private property <length> dp-col1-width: 100px;
     private property <length> dp-col3-width: 120px;
@@ -602,8 +604,37 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 horizontal-stretch: 1;
 
-                // Top: Device properties table
+                // Top: tabbed panel (Cam prop / Part. tracking)
                 VerticalLayout {
+                    vertical-stretch: 1;
+
+                    // Tab bar
+                    Rectangle {
+                        height: 28px;
+                        background: #222222;
+                        HorizontalLayout {
+                            spacing: 0px;
+                            alignment: start;
+                            Rectangle {
+                                width: 80px; height: 28px;
+                                background: root.right-top-tab == 0 ? #3A3A3A : #222222;
+                                rt-tab0 := TouchArea { clicked => { root.right-top-tab = 0; } }
+                                Text { text: "Cam prop"; color: white; font-size: 12px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                width: 100px; height: 28px;
+                                background: root.right-top-tab == 1 ? #3A3A3A : #222222;
+                                rt-tab1 := TouchArea { clicked => { root.right-top-tab = 1; } }
+                                Text { text: "Part. tracking"; color: white; font-size: 12px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: #444444; }
+
+                    // Cam prop panel
+                    if root.right-top-tab == 0: VerticalLayout {
                     vertical-stretch: 1;
 
                     // Column header
@@ -681,6 +712,19 @@ export component AppWindow inherits Window {
                                 background: #555555;
                                 border-radius: 2px;
                             }
+                        }
+                    }
+                    } // end Cam prop VerticalLayout
+
+                    // Part. tracking panel (empty placeholder)
+                    if root.right-top-tab == 1: VerticalLayout {
+                        vertical-stretch: 1;
+                        alignment: center;
+                        Text {
+                            text: "Particle tracking";
+                            color: #555555;
+                            font-size: 13px;
+                            horizontal-alignment: center;
                         }
                     }
                 }

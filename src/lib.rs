@@ -6,3 +6,4 @@ pub mod sim_adapter;
 pub mod session;
 pub mod viewer2d;
 pub mod app_logic;
+pub mod panes;

@@ -1,0 +1,49 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use slint::ComponentHandle;
+use crate::{AppWindow, DevicePropEntry};
+use crate::session::{RippSession, RippTab};
+use crate::camera::{CameraHandle, CameraImage};
+
+pub fn register(
+    app: &AppWindow,
+    cam: &CameraHandle,
+    session: &Rc<RefCell<RippSession>>,
+    last_camera_frame: &Arc<Mutex<Option<(Vec<u8>, u32, u32)>>>,
+) {
+    // ── Initial state ─────────────────────────────────────────────────────────
+    let snap = cam.snap();
+    *last_camera_frame.lock().unwrap() = Some((snap.data.clone(), snap.width, snap.height));
+    app.set_camera_image(snap.to_slint_image(0.0, 255.0));
+
+    let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| {
+        DevicePropEntry { device: p.device.into(), property: p.property.into(), value: p.value.into() }
+    }).collect();
+    app.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+
+    // ── Callbacks ─────────────────────────────────────────────────────────────
+    app.on_camera_settings_changed({
+        let session  = session.clone();
+        let lcf      = last_camera_frame.clone();
+        let app_weak = app.as_weak();
+        move || {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let lo = ui.get_camera_lo();
+                let hi = ui.get_camera_hi();
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
+                        tc.lo = lo;
+                        tc.hi = hi;
+                    }
+                }
+                if let Some((ref data, w, h)) = *lcf.lock().unwrap() {
+                    let img = CameraImage { data: data.clone(), width: w, height: h };
+                    ui.set_camera_image(img.to_slint_image(lo, hi));
+                }
+            }
+        }
+    });
+}
