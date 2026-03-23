@@ -1,6 +1,6 @@
-# claude-ui
+# RIPP (Rust Image Processing Platform)
 
-A demo application that renders a two-pane UI — "Hello World" text on the left and a rotating Utah teapot on the right — in two modes from a single shared codebase:
+This the user interface for RIPP. under development
 
 - **Desktop** (`claude-ui`) — native window via [Slint](https://slint.dev/)
 - **Server** (`server`) — headless render streamed as MJPEG over HTTP; any browser can view and interact with it
