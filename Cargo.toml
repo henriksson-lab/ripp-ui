@@ -9,6 +9,8 @@ repository = "https://github.com/henriksson-lab/ripp-ui"
 
 [dependencies]
 micromanager = "*"
+itk-rs = "*"
+bioformats = "0.1"
 slint    = "1"
 glam     = "0.29"
 bytemuck = { version = "1.16", features = ["derive"] }

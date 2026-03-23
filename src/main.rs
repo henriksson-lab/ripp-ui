@@ -46,8 +46,57 @@ fn load_dir(path: &std::path::Path) -> Vec<FileEntry> {
     entries
 }
 
+fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTreeEntry> {
+    let entries: Vec<ProjectTreeEntry> = ripp::session::flatten_session(session)
+        .into_iter()
+        .map(|(label, indent, id)| ProjectTreeEntry {
+            label: label.into(),
+            indent,
+            object_id: id as i32,
+        })
+        .collect();
+    Rc::new(slint::VecModel::from(entries)).into()
+}
+
 fn main() {
     let app = AppWindow::new().unwrap();
+
+    let session = Rc::new(RefCell::new({
+        let mut s = ripp::session::RippSession::new();
+        s.add_project("Demo Project");
+        s
+    }));
+    app.set_project_tree(build_tree(&session.borrow()));
+
+    app.on_new_project({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move || {
+            session.borrow_mut().add_project("New Project");
+            if let Some(ui) = app_weak.upgrade() {
+                ui.set_project_tree(build_tree(&session.borrow()));
+            }
+        }
+    });
+
+    app.on_project_tree_selected(|_object_id| {});
+
+    app.on_close_project({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move || {
+            let proj_id = app_weak.upgrade()
+                .map(|u| u.get_selected_project_id())
+                .unwrap_or(-1);
+            if proj_id >= 0 {
+                session.borrow_mut().projects.remove(&(proj_id as u32));
+                if let Some(ui) = app_weak.upgrade() {
+                    ui.set_selected_project_id(-1);
+                    ui.set_project_tree(build_tree(&session.borrow()));
+                }
+            }
+        }
+    });
 
     let cwd = Rc::new(RefCell::new(
         std::fs::canonicalize(".").unwrap_or_else(|_| PathBuf::from("."))
@@ -56,6 +105,34 @@ fn main() {
     let entries = load_dir(&cwd.borrow());
     app.set_current_path(cwd.borrow().to_string_lossy().to_string().into());
     app.set_file_list(Rc::new(slint::VecModel::from(entries)).into());
+
+    app.on_open_file({
+        let session = session.clone();
+        let cwd = cwd.clone();
+        let app_weak = app.as_weak();
+        move |filename| {
+            let full_path = cwd.borrow().join(filename.as_str());
+            match ripp::session::BioformatsData::open(&full_path) {
+                Ok(bf_data) => {
+                    let name = full_path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| full_path.to_string_lossy().into_owned());
+                    let proj_id = session.borrow_mut().add_project(&name);
+                    session.borrow_mut().projects.get_mut(&proj_id).unwrap()
+                        .root.data = ripp::session::ProjectData::Bioformats(bf_data);
+                    if let Some(ui) = app_weak.upgrade() {
+                        ui.set_project_tree(build_tree(&session.borrow()));
+                        ui.set_active_tab(0);
+                    }
+                }
+                Err(e) => {
+                    if let Some(ui) = app_weak.upgrade() {
+                        ui.set_error_message(e.to_string().into());
+                    }
+                }
+            }
+        }
+    });
 
     app.on_navigate_to({
         let app_weak = app.as_weak();
@@ -97,7 +174,8 @@ fn main() {
         },
     );
 
-    let cam = start_camera_thread();
+    let use_sim = std::env::args().any(|a| a == "--sim-camera");
+    let cam = start_camera_thread(use_sim);
     app.set_camera_image(cam.snap().to_slint_image());
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {

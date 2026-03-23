@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 use micromanager::CMMCore;
 use micromanager::adapters::demo::DemoAdapter;
+use crate::sim_adapter::SimAdapter;
 
 // ── Public data types ─────────────────────────────────────────────────────────
 
@@ -74,11 +75,12 @@ impl CameraHandle {
 }
 
 /// Spawn the camera thread and return a handle to it.
+/// Pass `use_sim = true` to use the SimulatedCamera instead of the DemoCamera.
 /// The thread exits automatically when all handles are dropped.
-pub fn start_camera_thread() -> CameraHandle {
+pub fn start_camera_thread(use_sim: bool) -> CameraHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel::<CameraCmd>();
     std::thread::spawn(move || {
-        let mut cam = DemoCamera::new();
+        let mut cam = DemoCamera::new(use_sim);
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
                 CameraCmd::Snap(reply)     => { let _ = reply.send(cam.snap()); }
@@ -102,12 +104,18 @@ struct DemoCamera {
 }
 
 impl DemoCamera {
-    fn new() -> Self {
+    fn new(use_sim: bool) -> Self {
         let mut core = CMMCore::new();
         core.register_adapter(Box::new(DemoAdapter));
 
-        core.load_device("Camera",  "demo", "DCamera").unwrap();
+        if use_sim {
+            core.register_adapter(Box::new(SimAdapter));
+            core.load_device("Camera", "sim", "SimCamera").unwrap();
+        } else {
+            core.load_device("Camera", "demo", "DCamera").unwrap();
+        }
         core.load_device("Stage",   "demo", "DStage").unwrap();
+
         core.load_device("XYStage", "demo", "DXYStage").unwrap();
         core.load_device("Shutter", "demo", "DShutter").unwrap();
         core.load_device("Wheel",   "demo", "DWheel").unwrap();

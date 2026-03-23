@@ -11,6 +11,12 @@ struct DevicePropEntry {
     value: string,
 }
 
+struct ProjectTreeEntry {
+    label: string,
+    indent: int,
+    object-id: int,
+}
+
 export component AppWindow inherits Window {
     title: "RIPP — Rust Imaging Processing Platform";
     min-width: 640px;
@@ -26,12 +32,20 @@ export component AppWindow inherits Window {
     private property <bool> about-open: false;
 
     in property <bool> server-mode: false;
+    in-out property <string> error-message: "";
     in property <[FileEntry]> file-list;
     in property <string> current-path: ".";
     in property <[DevicePropEntry]> device-props;
+    in property <[ProjectTreeEntry]> project-tree;
 
     // Only actions that need Rust
     callback quit();
+    callback new-project();
+    callback close-project();
+    callback open-file(string);   // passes selected filename (not full path)
+    callback project-tree-selected(int);  // passes object-id
+    private property <int> selected-row: -1;
+    in-out property <int> selected-project-id: -1;
     callback navigate-to(string);
     callback snap-requested();
     callback live-toggled(bool);
@@ -41,7 +55,7 @@ export component AppWindow inherits Window {
     private property <float> cam-drag-x;
     private property <float> cam-drag-y;
 
-    private property <int> active-tab: 0;      // 0=Files, 1=Plots, 2=Help
+    in-out property <int> active-tab: 0;      // 0=Project, 1=Files, 2=Plots, 3=Help
     private property <int> active-left-tab: 0; // 0=3D View, 1=Camera
 
     // Column widths for device properties table
@@ -53,6 +67,8 @@ export component AppWindow inherits Window {
     // Column widths for file list table
     private property <length> file-size-width: 72px;
     private property <length> file-drag: 0;
+    private property <int> selected-file-row: -1;
+    private property <bool> selected-file-is-dir: false;
 
     // ── Main layout ──────────────────────────────────────────────────────────
     VerticalLayout {
@@ -338,10 +354,23 @@ export component AppWindow inherits Window {
                             alignment: start;
 
                             Rectangle {
-                                width: 60px;
+                                width: 70px;
                                 height: 28px;
                                 background: root.active-tab == 0 ? #3A3A3A : #222222;
-                                tab0-btn := TouchArea { clicked => { root.active-tab = 0; } }
+                                tab-proj-btn := TouchArea { clicked => { root.active-tab = 0; } }
+                                Text {
+                                    text: "Project";
+                                    color: white;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle {
+                                width: 60px;
+                                height: 28px;
+                                background: root.active-tab == 1 ? #3A3A3A : #222222;
+                                tab0-btn := TouchArea { clicked => { root.active-tab = 1; } }
                                 Text {
                                     text: "Files";
                                     color: white;
@@ -353,8 +382,8 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 width: 60px;
                                 height: 28px;
-                                background: root.active-tab == 1 ? #3A3A3A : #222222;
-                                tab1-btn := TouchArea { clicked => { root.active-tab = 1; } }
+                                background: root.active-tab == 2 ? #3A3A3A : #222222;
+                                tab1-btn := TouchArea { clicked => { root.active-tab = 2; } }
                                 Text {
                                     text: "Plots";
                                     color: white;
@@ -366,8 +395,8 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 width: 60px;
                                 height: 28px;
-                                background: root.active-tab == 2 ? #3A3A3A : #222222;
-                                tab2-btn := TouchArea { clicked => { root.active-tab = 2; } }
+                                background: root.active-tab == 3 ? #3A3A3A : #222222;
+                                tab2-btn := TouchArea { clicked => { root.active-tab = 3; } }
                                 Text {
                                     text: "Help";
                                     color: white;
@@ -379,8 +408,87 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    // Files tab
+                    // Project tab
                     if root.active-tab == 0: VerticalLayout {
+                        vertical-stretch: 1;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: #000000;
+                            clip: true;
+
+                            proj-flick := Flickable {
+                                width: parent.width - 8px;
+                                height: parent.height;
+                                viewport-height: proj-entries.preferred-height;
+
+                                proj-entries := VerticalLayout {
+                                    for entry[i] in root.project-tree: Rectangle {
+                                        height: 22px;
+                                        background: root.selected-row == i ? #1E3A5F : #000000;
+                                        row-ta := TouchArea {
+                                            clicked => {
+                                                root.selected-row = i;
+                                                root.project-tree-selected(entry.object-id);
+                                                if (entry.indent == 0) {
+                                                    root.selected-project-id = entry.object-id;
+                                                }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            padding-left: 8px + entry.indent * 16px;
+                                            padding-right: 4px;
+                                            Text {
+                                                text: entry.label;
+                                                color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
+                                                font-size: 13px;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                x: parent.width - 6px;
+                                width: 6px;
+                                height: parent.height;
+                                background: #111111;
+                                Rectangle {
+                                    visible: proj-flick.viewport-height > proj-flick.height;
+                                    width: 4px;
+                                    x: 1px;
+                                    y: (-proj-flick.viewport-y / proj-flick.viewport-height) * parent.height;
+                                    height: max(20px, (proj-flick.height / proj-flick.viewport-height) * parent.height);
+                                    background: #555555;
+                                    border-radius: 2px;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 32px;
+                            background: #1A1A1A;
+                            HorizontalLayout {
+                                padding: 4px;
+                                spacing: 6px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 60px; height: 24px;
+                                    background: close-proj-btn.has-hover ? #3D3D3D : #2A2A2A;
+                                    border-radius: 3px;
+                                    close-proj-btn := TouchArea { clicked => { root.close-project(); } }
+                                    Text { text: "Close"; color: white; font-size: 12px;
+                                           horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                    }
+
+                    // Files tab
+                    if root.active-tab == 1: VerticalLayout {
                         vertical-stretch: 1;
 
                         // Path bar
@@ -469,12 +577,17 @@ export component AppWindow inherits Window {
                                 viewport-height: file-entries.preferred-height;
 
                                 file-entries := VerticalLayout {
-                                    for entry in root.file-list: Rectangle {
+                                    for entry[i] in root.file-list: Rectangle {
                                         height: 22px;
-                                        background: entry-area.has-hover ? #1E1E1E : #000000;
+                                        background: root.selected-file-row == i ? #1E3A5F
+                                                  : entry-area.has-hover ? #1E1E1E : #000000;
                                         entry-area := TouchArea {
                                             clicked => {
+                                                root.selected-file-row = i;
+                                                root.selected-file-is-dir = entry.is-dir;
                                                 if (entry.is-dir) {
+                                                    root.selected-file-row = -1;
+                                                    root.selected-file-is-dir = false;
                                                     root.navigate-to(entry.name);
                                                 }
                                             }
@@ -530,16 +643,42 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
+
+                        Rectangle {
+                            height: 32px;
+                            background: #1A1A1A;
+                            HorizontalLayout {
+                                padding: 4px;
+                                spacing: 6px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 60px; height: 24px;
+                                    opacity: root.selected-file-row >= 0 && !root.selected-file-is-dir ? 1.0 : 0.4;
+                                    background: open-file-btn.has-hover && root.selected-file-row >= 0 && !root.selected-file-is-dir ? #3D3D3D : #2A2A2A;
+                                    border-radius: 3px;
+                                    open-file-btn := TouchArea {
+                                        clicked => {
+                                            if (root.selected-file-row >= 0 && !root.selected-file-is-dir) {
+                                                root.open-file(root.file-list[root.selected-file-row].name);
+                                            }
+                                        }
+                                    }
+                                    Text { text: "Open"; color: white; font-size: 12px;
+                                           horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+                        }
                     }
 
                     // Plots tab
-                    if root.active-tab == 1: Rectangle {
+                    if root.active-tab == 2: Rectangle {
                         vertical-stretch: 1;
                         background: #111111;
                     }
 
                     // Help tab
-                    if root.active-tab == 2: Rectangle {
+                    if root.active-tab == 3: Rectangle {
                         vertical-stretch: 1;
                         background: #111111;
                     }
@@ -581,7 +720,10 @@ export component AppWindow inherits Window {
                 height: 30px;
                 background: new-item.has-hover ? #3D3D3D : transparent;
                 new-item := TouchArea {
-                    clicked => { root.file-menu-open = false; }
+                    clicked => {
+                        root.file-menu-open = false;
+                        root.new-project();
+                    }
                 }
                 Text {
                     text: "New";
@@ -635,6 +777,59 @@ export component AppWindow inherits Window {
                     height: parent.height;
                     vertical-alignment: center;
                     x: 8px;
+                }
+            }
+        }
+    }
+
+    // ── Error backdrop ────────────────────────────────────────────────────────
+    if root.error-message != "": Rectangle {
+        z: 10;
+        width: root.width;
+        height: root.height;
+        background: #00000080;
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => { root.error-message = ""; }
+        }
+    }
+
+    // ── Error dialog ──────────────────────────────────────────────────────────
+    if root.error-message != "": Rectangle {
+        z: 11;
+        width: 320px;
+        height: err-layout.preferred-height + 48px;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: #2B2B2B;
+        border-width: 1px;
+        border-color: #884444;
+        border-radius: 4px;
+
+        TouchArea { width: parent.width; height: parent.height; }
+
+        err-layout := VerticalLayout {
+            padding: 24px;
+            spacing: 8px;
+
+            Text { text: "Cannot open file"; font-size: 16px; color: #FF6666; }
+            Text { text: root.error-message; color: #CCCCCC; font-size: 12px; wrap: word-wrap; }
+            Rectangle { height: 8px; }
+
+            Rectangle {
+                height: 32px;
+                width: 60px;
+                background: err-ok-btn.has-hover ? #3D3D3D : #444444;
+                border-radius: 3px;
+                err-ok-btn := TouchArea {
+                    clicked => { root.error-message = ""; }
+                }
+                Text {
+                    text: "OK";
+                    color: white;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
             }
         }

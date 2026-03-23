@@ -104,6 +104,20 @@ fn to_button(s: &str) -> slint::platform::PointerEventButton {
     }
 }
 
+// ── Session helpers ───────────────────────────────────────────────────────────
+
+fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTreeEntry> {
+    let entries: Vec<ProjectTreeEntry> = ripp::session::flatten_session(session)
+        .into_iter()
+        .map(|(label, indent, id)| ProjectTreeEntry {
+            label: label.into(),
+            indent,
+            object_id: id as i32,
+        })
+        .collect();
+    Rc::new(slint::VecModel::from(entries)).into()
+}
+
 // ── Render loop (main thread) ────────────────────────────────────────────────
 
 fn run_render_loop(
@@ -115,6 +129,44 @@ fn run_render_loop(
     camera: CameraHandle,
     show_fps: bool,
 ) {
+    let session = Rc::new(std::cell::RefCell::new({
+        let mut s = ripp::session::RippSession::new();
+        s.add_project("Demo Project");
+        s
+    }));
+    ui.set_project_tree(build_tree(&session.borrow()));
+
+    ui.on_new_project({
+        let session = session.clone();
+        let ui_weak = ui.as_weak();
+        move || {
+            session.borrow_mut().add_project("New Project");
+            if let Some(u) = ui_weak.upgrade() {
+                u.set_project_tree(build_tree(&session.borrow()));
+            }
+        }
+    });
+
+    ui.on_project_tree_selected(|_object_id| {});
+    ui.on_open_file(|_filename| {});
+
+    ui.on_close_project({
+        let session = session.clone();
+        let ui_weak = ui.as_weak();
+        move || {
+            let proj_id = ui_weak.upgrade()
+                .map(|u| u.get_selected_project_id())
+                .unwrap_or(-1);
+            if proj_id >= 0 {
+                session.borrow_mut().projects.remove(&(proj_id as u32));
+                if let Some(u) = ui_weak.upgrade() {
+                    u.set_selected_project_id(-1);
+                    u.set_project_tree(build_tree(&session.borrow()));
+                }
+            }
+        }
+    });
+
     let teapot = TeapotRenderer::new(TEAPOT_W, TEAPOT_H);
     let start  = Instant::now();
     let (mut w, mut h) = *viewport.lock().unwrap();
@@ -429,6 +481,7 @@ async fn mjpeg_stream(
 
 fn main() {
     let show_fps = std::env::args().any(|a| a == "--fps");
+    let use_sim  = std::env::args().any(|a| a == "--sim-camera");
 
     let viewport: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
     let event_queue: EventQueue = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
@@ -465,7 +518,7 @@ fn main() {
             }
         }
     });
-    let cam = start_camera_thread();
+    let cam = start_camera_thread(use_sim);
     ui.set_camera_image(cam.snap().to_slint_image());
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
