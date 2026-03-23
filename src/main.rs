@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 use ripp::teapot::TeapotRenderer;
-use micromanager::CMMCore;
-use micromanager::adapters::demo::DemoAdapter;
+use ripp::camera::DemoCamera;
 
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;
@@ -97,26 +96,24 @@ fn main() {
         },
     );
 
-    // Snap one image from the demo camera
-    let mut core = CMMCore::new();
-    core.register_adapter(Box::new(DemoAdapter));
-    core.load_device("Camera", "demo", "DCamera").unwrap();
-    core.initialize_device("Camera").unwrap();
-    core.set_camera_device("Camera").unwrap();
-    core.snap_image().unwrap();
-    let frame = core.get_image().unwrap();
-
-    let w = frame.width;
-    let h = frame.height;
-    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+    let mut cam = DemoCamera::new();
+    let img = cam.snap();
+    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(img.width, img.height);
     let dst = pb.make_mut_bytes();
-    for (i, &g) in frame.data.iter().enumerate() {
+    for (i, &g) in img.data.iter().enumerate() {
         dst[i * 4]     = g;
         dst[i * 4 + 1] = g;
         dst[i * 4 + 2] = g;
         dst[i * 4 + 3] = 255;
     }
     app.set_camera_image(slint::Image::from_rgba8(pb));
+
+    let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
+        device: p.device.into(),
+        property: p.property.into(),
+        value: p.value.into(),
+    }).collect();
+    app.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
 
     app.on_quit(|| std::process::exit(0));
 

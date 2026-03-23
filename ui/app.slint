@@ -5,6 +5,12 @@ struct FileEntry {
     size: string,
 }
 
+struct DevicePropEntry {
+    device: string,
+    property: string,
+    value: string,
+}
+
 export component AppWindow inherits Window {
     title: "RIPP — Rust Imaging Processing Platform";
     min-width: 640px;
@@ -22,6 +28,7 @@ export component AppWindow inherits Window {
     in property <bool> server-mode: false;
     in property <[FileEntry]> file-list;
     in property <string> current-path: ".";
+    in property <[DevicePropEntry]> device-props;
 
     // Only actions that need Rust
     callback quit();
@@ -29,6 +36,16 @@ export component AppWindow inherits Window {
 
     private property <int> active-tab: 0;      // 0=Files, 1=Plots, 2=Help
     private property <int> active-left-tab: 0; // 0=3D View, 1=Camera
+
+    // Column widths for device properties table
+    private property <length> dp-col1-width: 100px;
+    private property <length> dp-col3-width: 120px;
+    private property <length> dp-drag1: 0;
+    private property <length> dp-drag3: 0;
+
+    // Column widths for file list table
+    private property <length> file-size-width: 72px;
+    private property <length> file-drag: 0;
 
     // ── Main layout ──────────────────────────────────────────────────────────
     VerticalLayout {
@@ -148,17 +165,86 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 horizontal-stretch: 1;
 
-                // Top: Current tool
-                Rectangle {
+                // Top: Device properties table
+                VerticalLayout {
                     vertical-stretch: 1;
-                    background: #1A1A1A;
 
-                    Text {
-                        text: "Current tool here";
-                        color: white;
-                        font-size: 32px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    // Column header
+                    Rectangle {
+                        height: 20px;
+                        background: #000000;
+                        HorizontalLayout {
+                            padding-left: 4px;
+                            padding-right: 4px;
+                            Text { text: "Device";   color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
+                            Rectangle {
+                                width: 5px; height: parent.height;
+                                background: dph1.pressed ? #666666 : (dph1.has-hover ? #444444 : transparent);
+                                dph1 := TouchArea {
+                                    mouse-cursor: col-resize;
+                                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag1 = self.mouse-x; } }
+                                    moved => { root.dp-col1-width = max(40px, root.dp-col1-width + self.mouse-x - root.dp-drag1); }
+                                }
+                            }
+                            Text { text: "Property"; color: #888888; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            Rectangle {
+                                width: 5px; height: parent.height;
+                                background: dph3.pressed ? #666666 : (dph3.has-hover ? #444444 : transparent);
+                                dph3 := TouchArea {
+                                    mouse-cursor: col-resize;
+                                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag3 = self.mouse-x; } }
+                                    moved => { root.dp-col3-width = max(40px, root.dp-col3-width - (self.mouse-x - root.dp-drag3)); }
+                                }
+                            }
+                            Text { text: "Value";    color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
+                        }
+                    }
+                    Rectangle { height: 1px; background: #2A2A2A; }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: #000000;
+                        clip: true;
+
+                        prop-flick := Flickable {
+                            width: parent.width - 8px;
+                            height: parent.height;
+                            viewport-height: prop-entries.preferred-height;
+
+                            prop-entries := VerticalLayout {
+                                for entry in root.device-props: Rectangle {
+                                    height: 22px;
+                                    background: prop-row.has-hover ? #1E1E1E : #000000;
+                                    prop-row := TouchArea {}
+                                    HorizontalLayout {
+                                        padding-left: 4px;
+                                        padding-right: 4px;
+                                        spacing: 0px;
+                                        Text { text: entry.device;   color: #6699CC; font-size: 12px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
+                                        Rectangle { width: 5px; }
+                                        Text { text: entry.property; color: #CCCCCC; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                        Rectangle { width: 5px; }
+                                        Text { text: entry.value;    color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            x: parent.width - 6px;
+                            width: 6px;
+                            height: parent.height;
+                            background: #111111;
+                            Rectangle {
+                                visible: prop-flick.viewport-height > prop-flick.height;
+                                width: 4px;
+                                x: 1px;
+                                y: (-prop-flick.viewport-y / prop-flick.viewport-height) * parent.height;
+                                height: max(20px, (prop-flick.height / prop-flick.viewport-height) * parent.height);
+                                background: #555555;
+                                border-radius: 2px;
+                            }
+                        }
                     }
                 }
 
@@ -274,13 +360,23 @@ export component AppWindow inherits Window {
                                     font-size: 11px;
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                Rectangle {
+                                    width: 5px; height: parent.height;
+                                    background: fh.pressed ? #666666 : (fh.has-hover ? #444444 : transparent);
+                                    fh := TouchArea {
+                                        mouse-cursor: col-resize;
+                                        pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.file-drag = self.mouse-x; } }
+                                        moved => { root.file-size-width = max(40px, root.file-size-width - (self.mouse-x - root.file-drag)); }
+                                    }
                                 }
                                 Text {
                                     text: "Size";
                                     color: #888888;
                                     font-size: 11px;
                                     vertical-alignment: center;
-                                    width: 72px;
+                                    width: root.file-size-width;
                                     horizontal-alignment: right;
                                 }
                             }
@@ -333,7 +429,7 @@ export component AppWindow inherits Window {
                                                 color: #777777;
                                                 font-size: 12px;
                                                 vertical-alignment: center;
-                                                width: 72px;
+                                                width: root.file-size-width;
                                                 horizontal-alignment: right;
                                             }
                                         }

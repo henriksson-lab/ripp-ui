@@ -11,6 +11,7 @@ slint::include_modules!();
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
 use ripp::teapot::TeapotRenderer;
+use ripp::camera::DemoCamera;
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
@@ -373,6 +374,25 @@ fn main() {
             }
         }
     });
+    let mut cam = DemoCamera::new();
+    let img = cam.snap();
+    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(img.width, img.height);
+    let dst = pb.make_mut_bytes();
+    for (i, &g) in img.data.iter().enumerate() {
+        dst[i * 4]     = g;
+        dst[i * 4 + 1] = g;
+        dst[i * 4 + 2] = g;
+        dst[i * 4 + 3] = 255;
+    }
+    ui.set_camera_image(slint::Image::from_rgba8(pb));
+
+    let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
+        device: p.device.into(),
+        property: p.property.into(),
+        value: p.value.into(),
+    }).collect();
+    ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+
     ui.on_quit(|| std::process::exit(0));
 
     let (frame_tx, _) = tokio::sync::broadcast::channel::<Vec<u8>>(4);
@@ -400,11 +420,9 @@ fn main() {
             .expect("bind failed")
             .run();
 
-            let handle = server.handle();
             tokio::spawn(async move {
                 tokio::signal::ctrl_c().await.expect("ctrl_c");
                 println!("\nShutting down…");
-                handle.stop(true).await;
                 std::process::exit(0);
             });
 
