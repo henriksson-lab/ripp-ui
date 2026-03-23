@@ -9,6 +9,19 @@ use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_left_tabs;
 use crate::panes::viewer2d as v2d;
 
+fn add_tab(
+    session:  &Rc<RefCell<RippSession>>,
+    app_weak: &slint::Weak<AppWindow>,
+    tab:      RippTab,
+) {
+    session.borrow_mut().tabs.push(tab);
+    if let Some(ui) = app_weak.upgrade() {
+        let new_idx = (session.borrow().tabs.len() as i32) - 1;
+        ui.set_left_tabs(build_left_tabs(&session.borrow()));
+        ui.set_active_left_tab(new_idx);
+    }
+}
+
 pub fn register<F: Fn() + 'static>(
     app: &AppWindow,
     session: &Rc<RefCell<RippSession>>,
@@ -44,40 +57,19 @@ pub fn register<F: Fn() + 'static>(
     app.on_add_tab_3d({
         let session  = session.clone();
         let app_weak = app.as_weak();
-        move || {
-            session.borrow_mut().tabs.push(RippTab::Tab3d(Tab3d { camera: Camera3d::default() }));
-            if let Some(ui) = app_weak.upgrade() {
-                let new_idx = (session.borrow().tabs.len() as i32) - 1;
-                ui.set_left_tabs(build_left_tabs(&session.borrow()));
-                ui.set_active_left_tab(new_idx);
-            }
-        }
+        move || { add_tab(&session, &app_weak, RippTab::Tab3d(Tab3d { camera: Camera3d::default() })); }
     });
 
     app.on_add_tab_2d({
         let session  = session.clone();
         let app_weak = app.as_weak();
-        move || {
-            session.borrow_mut().tabs.push(RippTab::Tab2d(Tab2d::default()));
-            if let Some(ui) = app_weak.upgrade() {
-                let new_idx = (session.borrow().tabs.len() as i32) - 1;
-                ui.set_left_tabs(build_left_tabs(&session.borrow()));
-                ui.set_active_left_tab(new_idx);
-            }
-        }
+        move || { add_tab(&session, &app_weak, RippTab::Tab2d(Tab2d::default())); }
     });
 
     app.on_add_tab_camera({
         let session  = session.clone();
         let app_weak = app.as_weak();
-        move || {
-            session.borrow_mut().tabs.push(RippTab::Camera(TabCamera { live: false, color: crate::session::ColorMappingRange::default() }));
-            if let Some(ui) = app_weak.upgrade() {
-                let new_idx = (session.borrow().tabs.len() as i32) - 1;
-                ui.set_left_tabs(build_left_tabs(&session.borrow()));
-                ui.set_active_left_tab(new_idx);
-            }
-        }
+        move || { add_tab(&session, &app_weak, RippTab::Camera(TabCamera { live: false, color: crate::session::ColorMappingRange::default() })); }
     });
 
     app.on_left_tab_activated({
