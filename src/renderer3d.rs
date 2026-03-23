@@ -2,7 +2,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use wgpu::util::DeviceExt;
-use crate::session::Camera3d;
+use crate::session::{Camera3d, WindowSize};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -20,8 +20,7 @@ struct Uniforms {
 }
 
 pub struct Renderer3d {
-    w:           u32,
-    h:           u32,
+    size:        WindowSize,
     bpr:         u32, // bytes-per-row (wgpu-aligned)
     device:      wgpu::Device,
     queue:       wgpu::Queue,
@@ -39,10 +38,11 @@ pub struct Renderer3d {
 
 impl Renderer3d {
     pub fn new(w: u32, h: u32) -> Self {
-        futures::executor::block_on(Self::new_async(w, h))
+        futures::executor::block_on(Self::new_async(WindowSize { w, h }))
     }
 
-    async fn new_async(w: u32, h: u32) -> Renderer3d {
+    async fn new_async(size: WindowSize) -> Renderer3d {
+        let (w, h) = (size.w, size.h);
         // wgpu requires bytes-per-row to be a multiple of 256
         let bpr = (w * 4 + 255) / 256 * 256;
 
@@ -215,14 +215,14 @@ impl Renderer3d {
         );
 
         Self {
-            w, h, bpr, device, queue, pipeline, vbuf, ibuf, ubuf, bind_group,
+            size, bpr, device, queue, pipeline, vbuf, ibuf, ubuf, bind_group,
             color_tex, color_view, depth_view, staging, index_count,
         }
     }
 
     /// Render one frame and return destrided RGBA8 bytes (length = w * h * 4).
     pub fn render_frame(&self, cam: &Camera3d) -> Vec<u8> {
-        let aspect = self.w as f32 / self.h as f32;
+        let aspect = self.size.w as f32 / self.size.h as f32;
         let mvp    = cam.view_matrix(aspect);
         self.queue.write_buffer(
             &self.ubuf,
@@ -279,7 +279,7 @@ impl Renderer3d {
                     rows_per_image: None,
                 },
             },
-            wgpu::Extent3d { width: self.w, height: self.h, depth_or_array_layers: 1 },
+            wgpu::Extent3d { width: self.size.w, height: self.size.h, depth_or_array_layers: 1 },
         );
         let sub = self.queue.submit([enc.finish()]);
 
@@ -296,13 +296,13 @@ impl Renderer3d {
         self.staging.unmap();
 
         // Strip stride padding if present
-        if self.bpr == self.w * 4 {
+        if self.bpr == self.size.w * 4 {
             raw
         } else {
-            let mut out = Vec::with_capacity((self.w * self.h * 4) as usize);
-            for row in 0..self.h as usize {
+            let mut out = Vec::with_capacity((self.size.w * self.size.h * 4) as usize);
+            for row in 0..self.size.h as usize {
                 let s = row * self.bpr as usize;
-                out.extend_from_slice(&raw[s..s + self.w as usize * 4]);
+                out.extend_from_slice(&raw[s..s + self.size.w as usize * 4]);
             }
             out
         }

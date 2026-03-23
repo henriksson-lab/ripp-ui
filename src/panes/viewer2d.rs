@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab, ProjectData, ColorMappingRange, find_object_ref, find_object_mut};
+use crate::session::{RippSession, RippTab, ProjectData, Camera2d, ColorMappingRange, find_object_ref, find_object_mut};
 use crate::renderer2d::Viewer2dRenderer;
 
 // ── GPU helpers ───────────────────────────────────────────────────────────────
@@ -46,17 +46,16 @@ pub fn render(
     color: ColorMappingRange,
     ui: &AppWindow,
 ) {
-    let (cam_x, cam_y, zoom) = {
+    let cam = {
         let s = session.borrow();
         match s.tabs.get(tab_idx) {
-            Some(RippTab::Tab2d(t)) => (t.camera.x, t.camera.y, t.camera.zoom),
+            Some(RippTab::Tab2d(t)) => Camera2d { x: t.camera.x, y: t.camera.y, zoom: t.camera.zoom },
             _ => return,
         }
     };
-    if let Some(pixels) = viewer2d.render(cam_x, cam_y, zoom, color) {
-        let w = viewer2d.out_w();
-        let h = viewer2d.out_h();
-        let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+    if let Some(pixels) = viewer2d.render(cam, color) {
+        let sz = viewer2d.size();
+        let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sz.w, sz.h);
         pb.make_mut_bytes().copy_from_slice(&pixels);
         ui.set_viewer2d_image(slint::Image::from_rgba8(pb));
         ui.set_viewer2d_image_loaded(true);

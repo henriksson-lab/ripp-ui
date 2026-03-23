@@ -50,10 +50,22 @@ impl Camera3d {
 }
 
 pub struct Camera2d {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+    pub x:    f64,
+    pub y:    f64,
     pub zoom: f64,
+}
+
+pub struct Camera2dZ {
+    pub x:    f64,
+    pub y:    f64,
+    pub z:    f64,
+    pub zoom: f64,
+}
+
+#[derive(Copy, Clone)]
+pub struct WindowSize {
+    pub w: u32,
+    pub h: u32,
 }
 
 pub struct Tab3d {
@@ -61,7 +73,7 @@ pub struct Tab3d {
 }
 
 pub struct Tab2d {
-    pub camera: Camera2d,
+    pub camera: Camera2dZ,
     pub selected_proj_id: i32,
     pub selected_obj_id:  i32,
     pub color:            ColorMappingRange,
@@ -71,7 +83,7 @@ pub struct Tab2d {
 impl Default for Tab2d {
     fn default() -> Self {
         Self {
-            camera: Camera2d { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 },
+            camera: Camera2dZ { x: 0.0, y: 0.0, z: 0.0, zoom: 1.0 },
             selected_proj_id: -1,
             selected_obj_id:  -1,
             color: ColorMappingRange::default(),

@@ -9,7 +9,7 @@
 /// TeapotRenderer's device.
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
-use crate::session::ColorMappingRange;
+use crate::session::{Camera2d, ColorMappingRange, WindowSize};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -41,9 +41,8 @@ struct Gpu {
     color_tex:  Option<wgpu::Texture>,
     color_view: Option<wgpu::TextureView>,
     staging:    Option<wgpu::Buffer>,
-    out_w: u32,
-    out_h: u32,
-    bpr:   u32,
+    size: WindowSize,
+    bpr:  u32,
 }
 
 pub struct Viewer2dRenderer {
@@ -56,8 +55,9 @@ impl Viewer2dRenderer {
         Self { gpu: None }
     }
 
-    pub fn out_w(&self) -> u32 { self.gpu.as_ref().map_or(0, |g| g.out_w) }
-    pub fn out_h(&self) -> u32 { self.gpu.as_ref().map_or(0, |g| g.out_h) }
+    pub fn size(&self) -> WindowSize {
+        self.gpu.as_ref().map_or(WindowSize { w: 0, h: 0 }, |g| g.size)
+    }
 
     /// Upload a new image (z-slice).  Converts gray/RGB → RGBA8 on the CPU once.
     /// Initialises the wgpu device on the first call.
@@ -72,7 +72,7 @@ impl Viewer2dRenderer {
         };
 
         // Recreate render target if size changed
-        if gpu.out_w != img_w || gpu.out_h != img_h {
+        if gpu.size.w != img_w || gpu.size.h != img_h {
             let bpr = (img_w * 4 + 255) / 256 * 256;
             let ext = wgpu::Extent3d { width: img_w, height: img_h, depth_or_array_layers: 1 };
 
@@ -99,8 +99,7 @@ impl Viewer2dRenderer {
             gpu.color_tex  = Some(color_tex);
             gpu.color_view = Some(color_view);
             gpu.staging    = Some(staging);
-            gpu.out_w      = img_w;
-            gpu.out_h      = img_h;
+            gpu.size       = WindowSize { w: img_w, h: img_h };
             gpu.bpr        = bpr;
         }
 
@@ -147,7 +146,7 @@ impl Viewer2dRenderer {
 
     /// Render current frame with given camera/level parameters.
     /// Returns `None` if no image has been uploaded yet.
-    pub fn render(&self, cam_x: f64, cam_y: f64, zoom: f64, color: ColorMappingRange) -> Option<Vec<u8>> {
+    pub fn render(&self, cam: Camera2d, color: ColorMappingRange) -> Option<Vec<u8>> {
         let gpu = self.gpu.as_ref()?;
         let bind_group = gpu.bind_group.as_ref()?;
         let color_view = gpu.color_view.as_ref()?;
@@ -159,13 +158,13 @@ impl Viewer2dRenderer {
             &gpu.ubuf,
             0,
             bytemuck::cast_slice(&[Uniforms {
-                cam_x: cam_x as f32,
-                cam_y: cam_y as f32,
-                zoom:  zoom as f32,
+                cam_x: cam.x as f32,
+                cam_y: cam.y as f32,
+                zoom:  cam.zoom as f32,
                 lo:    color.lo,
                 hi:    color.hi,
-                out_w: gpu.out_w as f32,
-                out_h: gpu.out_h as f32,
+                out_w: gpu.size.w as f32,
+                out_h: gpu.size.h as f32,
                 _pad:  0.0,
             }]),
         );
@@ -208,7 +207,7 @@ impl Viewer2dRenderer {
                     rows_per_image: None,
                 },
             },
-            wgpu::Extent3d { width: gpu.out_w, height: gpu.out_h, depth_or_array_layers: 1 },
+            wgpu::Extent3d { width: gpu.size.w, height: gpu.size.h, depth_or_array_layers: 1 },
         );
         let sub = gpu.queue.submit([enc.finish()]);
 
@@ -225,13 +224,13 @@ impl Viewer2dRenderer {
         staging.unmap();
 
         // Destride
-        Some(if gpu.bpr == gpu.out_w * 4 {
+        Some(if gpu.bpr == gpu.size.w * 4 {
             raw
         } else {
-            let mut out = Vec::with_capacity((gpu.out_w * gpu.out_h * 4) as usize);
-            for row in 0..gpu.out_h as usize {
+            let mut out = Vec::with_capacity((gpu.size.w * gpu.size.h * 4) as usize);
+            for row in 0..gpu.size.h as usize {
                 let s = row * gpu.bpr as usize;
-                out.extend_from_slice(&raw[s..s + gpu.out_w as usize * 4]);
+                out.extend_from_slice(&raw[s..s + gpu.size.w as usize * 4]);
             }
             out
         })
@@ -341,9 +340,8 @@ impl Gpu {
             color_tex:  None,
             color_view: None,
             staging:    None,
-            out_w: 0,
-            out_h: 0,
-            bpr:   0,
+            size: WindowSize { w: 0, h: 0 },
+            bpr:  0,
         }
     }
 }
