@@ -46,16 +46,112 @@ fn load_dir(path: &std::path::Path) -> Vec<FileEntry> {
     entries
 }
 
+fn build_left_tabs(session: &ripp::session::RippSession) -> slint::ModelRc<LeftTabEntry> {
+    let entries: Vec<LeftTabEntry> = session.tabs.iter()
+        .map(|t| LeftTabEntry { label: t.label().into(), tab_type: t.type_id() })
+        .collect();
+    Rc::new(slint::VecModel::from(entries)).into()
+}
+
 fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTreeEntry> {
     let entries: Vec<ProjectTreeEntry> = ripp::session::flatten_session(session)
         .into_iter()
-        .map(|(label, indent, id)| ProjectTreeEntry {
+        .map(|(label, indent, obj_id, proj_id)| ProjectTreeEntry {
             label: label.into(),
             indent,
-            object_id: id as i32,
+            object_id: obj_id as i32,
+            project_id: proj_id as i32,
         })
         .collect();
     Rc::new(slint::VecModel::from(entries)).into()
+}
+
+fn render_bioformats_image(
+    bf: &mut ripp::session::BioformatsData,
+    z: u32,
+    cam_x: f64,
+    cam_y: f64,
+    zoom: f64,
+    brightness: f32,
+    contrast: f32,
+) -> Option<slint::Image> {
+    let meta = bf.reader.metadata();
+    let w = meta.size_x;
+    let h = meta.size_y;
+    let bytes = bf.reader.open_bytes(z).ok()?;
+
+    let is_gray = bytes.len() == (w * h) as usize;
+    let is_rgb  = bytes.len() == (w * h * 3) as usize;
+    if !is_gray && !is_rgb { return None; }
+
+    let apply = |v: u8| -> u8 {
+        (v as f32 * contrast + brightness * 255.0).clamp(0.0, 255.0) as u8
+    };
+
+    let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+    let out = pb.make_mut_bytes();
+
+    for oy in 0..h {
+        for ox in 0..w {
+            let src_x = (cam_x + (ox as f64 - w as f64 / 2.0) / zoom).round() as i64;
+            let src_y = (cam_y + (oy as f64 - h as f64 / 2.0) / zoom).round() as i64;
+            let i = (oy * w + ox) as usize;
+            if src_x >= 0 && src_x < w as i64 && src_y >= 0 && src_y < h as i64 {
+                let si = src_y as usize * w as usize + src_x as usize;
+                let (r, g, b) = if is_gray {
+                    let v = bytes[si]; (v, v, v)
+                } else {
+                    (bytes[si * 3], bytes[si * 3 + 1], bytes[si * 3 + 2])
+                };
+                out[i * 4]     = apply(r);
+                out[i * 4 + 1] = apply(g);
+                out[i * 4 + 2] = apply(b);
+            } else {
+                out[i * 4]     = 0;
+                out[i * 4 + 1] = 0;
+                out[i * 4 + 2] = 0;
+            }
+            out[i * 4 + 3] = 255;
+        }
+    }
+    Some(slint::Image::from_rgba8(pb))
+}
+
+fn do_render_viewer2d(
+    session: &std::rc::Rc<std::cell::RefCell<ripp::session::RippSession>>,
+    selected_obj: (i32, i32),
+    tab_idx: usize,
+    brightness: f32,
+    contrast: f32,
+    ui: &AppWindow,
+) {
+    let (proj_id, obj_id) = selected_obj;
+    if proj_id < 0 { return; }
+
+    let (z, cam_x, cam_y, zoom) = {
+        let s = session.borrow();
+        match s.tabs.get(tab_idx) {
+            Some(ripp::session::RippTab::Tab2d(t)) =>
+                (t.camera.z as u32, t.camera.x, t.camera.y, t.camera.zoom),
+            _ => return,
+        }
+    };
+
+    let image_opt = {
+        let mut s = session.borrow_mut();
+        if let Some(proj) = s.projects.get_mut(&(proj_id as u32)) {
+            if let Some(obj) = ripp::session::find_object_mut(&mut proj.root, obj_id as u32) {
+                if let ripp::session::ProjectData::Bioformats(bf) = &mut obj.data {
+                    render_bioformats_image(bf, z, cam_x, cam_y, zoom, brightness, contrast)
+                } else { None }
+            } else { None }
+        } else { None }
+    };
+
+    if let Some(img) = image_opt {
+        ui.set_viewer2d_image(img);
+        ui.set_viewer2d_image_loaded(true);
+    }
 }
 
 fn main() {
@@ -67,6 +163,27 @@ fn main() {
         s
     }));
     app.set_project_tree(build_tree(&session.borrow()));
+    app.set_left_tabs(build_left_tabs(&session.borrow()));
+
+    app.on_close_left_tab({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        move |index| {
+            let index = index as usize;
+            let mut s = session.borrow_mut();
+            if index < s.tabs.len() {
+                s.tabs.remove(index);
+            }
+            drop(s);
+            if let Some(ui) = app_weak.upgrade() {
+                ui.set_left_tabs(build_left_tabs(&session.borrow()));
+                let new_len = session.borrow().tabs.len() as i32;
+                if ui.get_active_left_tab() >= new_len {
+                    ui.set_active_left_tab((new_len - 1).max(0));
+                }
+            }
+        }
+    });
 
     app.on_new_project({
         let session = session.clone();
@@ -80,6 +197,82 @@ fn main() {
     });
 
     app.on_project_tree_selected(|_object_id| {});
+
+    let selected_obj: Rc<RefCell<(i32, i32)>> = Rc::new(RefCell::new((-1, -1)));
+
+    app.on_viewer2d_object_selected({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let selected_obj = selected_obj.clone();
+        move |project_id, object_id| {
+            *selected_obj.borrow_mut() = (project_id, object_id);
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let brightness = ui.get_viewer2d_brightness();
+                let contrast = ui.get_viewer2d_contrast();
+                do_render_viewer2d(&session, (project_id, object_id), tab_idx, brightness, contrast, &ui);
+            }
+        }
+    });
+
+    app.on_viewer2d_panned({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let selected_obj = selected_obj.clone();
+        move |dx, dy| {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.camera.x -= dx as f64 / t.camera.zoom;
+                        t.camera.y -= dy as f64 / t.camera.zoom;
+                    }
+                }
+                let obj = *selected_obj.borrow();
+                let brightness = ui.get_viewer2d_brightness();
+                let contrast = ui.get_viewer2d_contrast();
+                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+            }
+        }
+    });
+
+    app.on_viewer2d_scrolled({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let selected_obj = selected_obj.clone();
+        move |delta| {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                        t.camera.zoom *= (delta as f64 * 0.005_f64).exp();
+                        t.camera.zoom = t.camera.zoom.clamp(0.01, 100.0);
+                    }
+                }
+                let obj = *selected_obj.borrow();
+                let brightness = ui.get_viewer2d_brightness();
+                let contrast = ui.get_viewer2d_contrast();
+                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+            }
+        }
+    });
+
+    app.on_viewer2d_settings_changed({
+        let session = session.clone();
+        let app_weak = app.as_weak();
+        let selected_obj = selected_obj.clone();
+        move || {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let obj = *selected_obj.borrow();
+                let brightness = ui.get_viewer2d_brightness();
+                let contrast = ui.get_viewer2d_contrast();
+                do_render_viewer2d(&session, obj, tab_idx, brightness, contrast, &ui);
+            }
+        }
+    });
 
     app.on_close_project({
         let session = session.clone();

@@ -106,13 +106,21 @@ fn to_button(s: &str) -> slint::platform::PointerEventButton {
 
 // ── Session helpers ───────────────────────────────────────────────────────────
 
+fn build_left_tabs(session: &ripp::session::RippSession) -> slint::ModelRc<LeftTabEntry> {
+    let entries: Vec<LeftTabEntry> = session.tabs.iter()
+        .map(|t| LeftTabEntry { label: t.label().into(), tab_type: t.type_id() })
+        .collect();
+    Rc::new(slint::VecModel::from(entries)).into()
+}
+
 fn build_tree(session: &ripp::session::RippSession) -> slint::ModelRc<ProjectTreeEntry> {
     let entries: Vec<ProjectTreeEntry> = ripp::session::flatten_session(session)
         .into_iter()
-        .map(|(label, indent, id)| ProjectTreeEntry {
+        .map(|(label, indent, obj_id, proj_id)| ProjectTreeEntry {
             label: label.into(),
             indent,
-            object_id: id as i32,
+            object_id: obj_id as i32,
+            project_id: proj_id as i32,
         })
         .collect();
     Rc::new(slint::VecModel::from(entries)).into()
@@ -135,6 +143,7 @@ fn run_render_loop(
         s
     }));
     ui.set_project_tree(build_tree(&session.borrow()));
+    ui.set_left_tabs(build_left_tabs(&session.borrow()));
 
     ui.on_new_project({
         let session = session.clone();
@@ -147,7 +156,30 @@ fn run_render_loop(
         }
     });
 
+    ui.on_close_left_tab({
+        let session = session.clone();
+        let ui_weak = ui.as_weak();
+        move |index| {
+            let index = index as usize;
+            let mut s = session.borrow_mut();
+            if index < s.tabs.len() {
+                s.tabs.remove(index);
+            }
+            drop(s);
+            if let Some(u) = ui_weak.upgrade() {
+                u.set_left_tabs(build_left_tabs(&session.borrow()));
+                let new_len = session.borrow().tabs.len() as i32;
+                if u.get_active_left_tab() >= new_len {
+                    u.set_active_left_tab((new_len - 1).max(0));
+                }
+            }
+        }
+    });
     ui.on_project_tree_selected(|_object_id| {});
+    ui.on_viewer2d_object_selected(|_project_id, _object_id| {});
+    ui.on_viewer2d_panned(|_dx, _dy| {});
+    ui.on_viewer2d_scrolled(|_delta| {});
+    ui.on_viewer2d_settings_changed(|| {});
     ui.on_open_file(|_filename| {});
 
     ui.on_close_project({
