@@ -57,6 +57,8 @@ impl Default for Tab2d {
 
 pub struct TabCamera {
     pub live: bool,
+    pub lo: f32,
+    pub hi: f32,
 }
 
 pub enum RippTab {
@@ -89,7 +91,7 @@ impl RippSession {
             tabs: vec![
                 RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
                 RippTab::Tab2d(Tab2d::default()),
-                RippTab::Camera(TabCamera { live: false }),
+                RippTab::Camera(TabCamera { live: false, lo: 0.0, hi: 255.0 }),
             ],
             next_id: 0,
         }

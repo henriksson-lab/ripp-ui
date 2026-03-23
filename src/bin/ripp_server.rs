@@ -181,6 +181,7 @@ fn run_render_loop(
     ui.on_viewer2d_scrolled(|_delta| {});
     ui.on_viewer2d_settings_changed(|| {});
     ui.on_viewer2d_z_changed(|_z| {});
+    ui.on_camera_settings_changed(|| {});
     ui.on_add_tab_3d(|| {});
     ui.on_add_tab_2d(|| {});
     ui.on_add_tab_camera(|| {});
@@ -350,7 +351,7 @@ fn run_render_loop(
         }
 
         if let Some(raw) = pending_snap.lock().unwrap().take() {
-            ui.set_camera_image(raw.to_slint_image());
+            ui.set_camera_image(raw.to_slint_image(0.0, 255.0));
         }
 
         if let Some(props) = pending_props.lock().unwrap().take() {
@@ -563,7 +564,7 @@ fn main() {
         }
     });
     let cam = start_camera_thread(use_sim);
-    ui.set_camera_image(cam.snap().to_slint_image());
+    ui.set_camera_image(cam.snap().to_slint_image(0.0, 255.0));
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
         device: p.device.into(),

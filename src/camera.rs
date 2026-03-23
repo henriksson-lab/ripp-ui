@@ -12,14 +12,19 @@ pub struct CameraImage {
 }
 
 impl CameraImage {
-    /// Convert GRAY8 → RGBA8 and wrap as a Slint `Image`.
-    pub fn to_slint_image(&self) -> slint::Image {
+    /// Convert GRAY8 → RGBA8 and wrap as a Slint `Image`, applying lo/hi mapping.
+    pub fn to_slint_image(&self, lo: f32, hi: f32) -> slint::Image {
+        let range = (hi - lo).max(1.0);
+        let apply = |g: u8| -> u8 {
+            ((g as f32 - lo) / range * 255.0).clamp(0.0, 255.0) as u8
+        };
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(self.width, self.height);
         let dst = pb.make_mut_bytes();
         for (i, &g) in self.data.iter().enumerate() {
-            dst[i * 4]     = g;
-            dst[i * 4 + 1] = g;
-            dst[i * 4 + 2] = g;
+            let v = apply(g);
+            dst[i * 4]     = v;
+            dst[i * 4 + 1] = v;
+            dst[i * 4 + 2] = v;
             dst[i * 4 + 3] = 255;
         }
         slint::Image::from_rgba8(pb)

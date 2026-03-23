@@ -133,6 +133,9 @@ export component AppWindow inherits Window {
     callback live-toggled(bool);
     callback camera-panned(float, float);
     callback camera-scrolled(float);
+    in-out property <float> camera-lo: 0.0;
+    in-out property <float> camera-hi: 255.0;
+    callback camera-settings-changed();
     in-out property <bool> live-snap: false;
     callback left-tab-activated(int);
     changed active-left-tab => { root.left-tab-activated(root.active-left-tab); }
@@ -408,6 +411,22 @@ export component AppWindow inherits Window {
                                 Text { text: "Live"; font-size: 12px;
                                        color: root.live-snap ? #9ABFDD : white;
                                        horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 28px;
+                        background: #1A1A1A;
+                        HorizontalLayout {
+                            padding-left: 6px; padding-right: 6px;
+                            padding-top: 4px;  padding-bottom: 4px;
+                            RangeSlider {
+                                horizontal-stretch: 1;
+                                minimum: 0.0; maximum: 255.0;
+                                lo <=> root.camera-lo;
+                                hi <=> root.camera-hi;
+                                changed(l, h) => { root.camera-settings-changed(); }
                             }
                         }
                     }

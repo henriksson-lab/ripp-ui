@@ -3,7 +3,7 @@ slint::include_modules!();
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use ripp::teapot::TeapotRenderer;
 use ripp::camera::start_camera_thread;
 
@@ -230,7 +230,7 @@ fn main() {
         let app_weak = app.as_weak();
         move || {
             session.borrow_mut().tabs.push(ripp::session::RippTab::Camera(
-                ripp::session::TabCamera { live: false }
+                ripp::session::TabCamera { live: false, lo: 0.0, hi: 255.0 }
             ));
             if let Some(ui) = app_weak.upgrade() {
                 let new_idx = (session.borrow().tabs.len() as i32) - 1;
@@ -495,7 +495,9 @@ fn main() {
 
     let use_sim = std::env::args().any(|a| a == "--sim-camera");
     let cam = start_camera_thread(use_sim);
-    app.set_camera_image(cam.snap().to_slint_image());
+    // Shared storage for last captured camera frame (Send-safe for use in threads)
+    let last_camera_frame: Arc<Mutex<Option<(Vec<u8>, u32, u32)>>> = Arc::new(Mutex::new(None));
+    app.set_camera_image(cam.snap().to_slint_image(0.0, 255.0));
 
     let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| DevicePropEntry {
         device: p.device.into(),
@@ -507,13 +509,21 @@ fn main() {
     // Manual snap
     app.on_snap_requested({
         let cam = cam.clone();
+        let last_camera_frame = last_camera_frame.clone();
         let app_weak = app.as_weak();
         move || {
             let cam = cam.clone();
+            let last_camera_frame = last_camera_frame.clone();
             let app_weak = app_weak.clone();
             std::thread::spawn(move || {
-                let raw = cam.snap(); // CameraImage is Send
-                app_weak.upgrade_in_event_loop(move |ui| ui.set_camera_image(raw.to_slint_image())).ok();
+                let raw = cam.snap();
+                let frame = (raw.data.clone(), raw.width, raw.height);
+                app_weak.upgrade_in_event_loop(move |ui| {
+                    let lo = ui.get_camera_lo();
+                    let hi = ui.get_camera_hi();
+                    *last_camera_frame.lock().unwrap() = Some(frame);
+                    ui.set_camera_image(raw.to_slint_image(lo, hi));
+                }).ok();
             });
         }
     });
@@ -524,19 +534,26 @@ fn main() {
     // Factored out so on_left_tab_activated can also start the loop
     let start_live = {
         let cam = cam.clone();
+        let last_camera_frame = last_camera_frame.clone();
         let app_weak = app.as_weak();
         let live_running = live_running.clone();
         move || {
             if live_running.swap(true, Ordering::SeqCst) { return; } // already running
             let cam = cam.clone();
+            let last_camera_frame = last_camera_frame.clone();
             let app_weak = app_weak.clone();
             let live_running = live_running.clone();
             std::thread::spawn(move || {
                 while live_running.load(Ordering::SeqCst) {
                     let raw = cam.snap();
+                    let frame = (raw.data.clone(), raw.width, raw.height);
+                    let last_camera_frame = last_camera_frame.clone();
                     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
                     if app_weak.upgrade_in_event_loop(move |ui| {
-                        ui.set_camera_image(raw.to_slint_image());
+                        let lo = ui.get_camera_lo();
+                        let hi = ui.get_camera_hi();
+                        *last_camera_frame.lock().unwrap() = Some(frame);
+                        ui.set_camera_image(raw.to_slint_image(lo, hi));
                         let _ = done_tx.send(());
                     }).is_err() { break; }
                     done_rx.recv().ok();
@@ -563,6 +580,30 @@ fn main() {
                 start_live();
             } else {
                 live_running.store(false, Ordering::SeqCst);
+            }
+        }
+    });
+
+    app.on_camera_settings_changed({
+        let session = session.clone();
+        let last_camera_frame = last_camera_frame.clone();
+        let app_weak = app.as_weak();
+        move || {
+            if let Some(ui) = app_weak.upgrade() {
+                let tab_idx = ui.get_active_left_tab() as usize;
+                let lo = ui.get_camera_lo();
+                let hi = ui.get_camera_hi();
+                {
+                    let mut s = session.borrow_mut();
+                    if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
+                        tc.lo = lo;
+                        tc.hi = hi;
+                    }
+                }
+                if let Some((ref data, w, h)) = *last_camera_frame.lock().unwrap() {
+                    let img = ripp::camera::CameraImage { data: data.clone(), width: w, height: h };
+                    ui.set_camera_image(img.to_slint_image(lo, hi));
+                }
             }
         }
     });
@@ -610,7 +651,10 @@ fn main() {
                     }
                     Some(ripp::session::RippTab::Camera(tc)) => {
                         let want_live = tc.live;
+                        let (lo, hi) = (tc.lo, tc.hi);
                         ui.set_live_snap(want_live);
+                        ui.set_camera_lo(lo);
+                        ui.set_camera_hi(hi);
                         drop(s);
                         if want_live { start_live(); }
                     }
