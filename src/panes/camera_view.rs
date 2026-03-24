@@ -49,7 +49,7 @@ pub fn register(
                 let color = ColorMappingRange { lo: ui.get_camera_lo(), hi: ui.get_camera_hi() };
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Camera(tc)) = s.tabs_left.get_mut(tab_idx) {
                         tc.color = color;
                     }
                 }

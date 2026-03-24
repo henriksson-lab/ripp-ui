@@ -1,0 +1,23 @@
+export struct FileEntry {
+    name: string,
+    is-dir: bool,
+    size: string,
+}
+
+export struct DevicePropEntry {
+    device: string,
+    property: string,
+    value: string,
+}
+
+export struct LeftTabEntry {
+    label: string,
+    tab-type: int,   // 0=3D View, 1=2D Viewer, 2=Camera
+}
+
+export struct ProjectTreeEntry {
+    label: string,
+    indent: int,
+    object-id: int,
+    project-id: int,
+}

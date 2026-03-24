@@ -3,7 +3,7 @@ use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use crate::session::RippSession;
-use crate::app_logic::{build_tree, build_left_tabs};
+use crate::app_logic::{build_tree, build_tabs};
 
 pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
     // ── Initial state ─────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
                     ui.set_selected_project_id(-1);
                     ui.set_project_tree(build_tree(&session.borrow()));
                     // Rebuild left tabs in case open files reference the removed project
-                    ui.set_left_tabs(build_left_tabs(&session.borrow()));
+                    ui.set_left_tabs(build_tabs(&session.borrow().tabs_left));
                 }
             }
         }

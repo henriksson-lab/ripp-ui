@@ -85,7 +85,7 @@ pub fn register(
                         .root.data = ProjectData::Bioformats(bf_data);
                     if let Some(ui) = app_weak.upgrade() {
                         ui.set_project_tree(build_tree(&session.borrow()));
-                        ui.set_active_tab(0);
+                        ui.set_active_right_bottom_tab(0);
                     }
                 }
                 Err(e) => {

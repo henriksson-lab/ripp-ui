@@ -246,7 +246,7 @@ fn run_render_loop(
         // Render teapot → Slint image property.
         let camera = {
             let s = logic.session.borrow();
-            s.tabs.iter().find_map(|t| {
+            s.tabs_left.iter().find_map(|t| {
                 if let ripp::session::RippTab::Tab3d(t3) = t {
                     Some(ripp::session::Camera3d {
                         yaw:      t3.camera.yaw,

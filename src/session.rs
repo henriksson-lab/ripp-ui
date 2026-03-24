@@ -20,9 +20,14 @@ impl Default for ColorMappingRange {
 
 // --- session level ---
 
+#[derive(Copy, Clone)]
+pub enum TabArea { Left, RightTop, RightBottom }
+
 pub struct RippSession {
-    pub projects: BTreeMap<u32, Project>,
-    pub tabs: Vec<RippTab>,
+    pub projects:          BTreeMap<u32, Project>,
+    pub tabs_left:         Vec<RippTab>,
+    pub tabs_right_top:    Vec<RippTab>,
+    pub tabs_right_bottom: Vec<RippTab>,
     next_id: u32,
 }
 
@@ -102,10 +107,26 @@ pub struct TabCamera {
     pub color: ColorMappingRange,
 }
 
+// Right-top pane tabs
+pub struct TabCamProp;
+pub struct TabParticleTracking;
+
+// Right-bottom pane tabs
+pub struct TabProject;
+pub struct TabFileBrowser;
+pub struct TabPlots;
+pub struct TabHelp;
+
 pub enum RippTab {
     Tab3d(Tab3d),
     Tab2d(Tab2d),
     Camera(TabCamera),
+    CamProp(TabCamProp),
+    ParticleTracking(TabParticleTracking),
+    Project(TabProject),
+    FileBrowser(TabFileBrowser),
+    Plots(TabPlots),
+    Help(TabHelp),
 }
 
 // ── Tab plugin trait ──────────────────────────────────────────────────────────
@@ -116,6 +137,7 @@ pub struct ActivationContext {
     pub start_live:   Rc<dyn Fn()>,
     pub live_running: Arc<AtomicBool>,
     pub tab_idx:      usize,
+    pub area:         TabArea,
 }
 
 pub trait TabPane {
@@ -131,23 +153,41 @@ impl RippTab {
 
     pub fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
         match self {
-            Self::Tab3d(t)  => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Tab2d(t)  => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Camera(t) => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Tab3d(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Tab2d(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Camera(t)          => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::CamProp(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::ParticleTracking(t)=> (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Project(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::FileBrowser(t)     => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Plots(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::Help(t)            => (t as &dyn TabPane).on_activated(ui, ctx),
         }
     }
     pub fn on_deactivating(&mut self, lr: &Arc<AtomicBool>) {
         match self {
-            Self::Tab3d(t)  => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Tab2d(t)  => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Camera(t) => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Tab3d(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Tab2d(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Camera(t)          => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::CamProp(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::ParticleTracking(t)=> (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Project(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Plots(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::Help(t)            => (t as &mut dyn TabPane).on_deactivating(lr),
         }
     }
     fn as_pane(&self) -> &dyn TabPane {
         match self {
-            Self::Tab3d(t)  => t,
-            Self::Tab2d(t)  => t,
-            Self::Camera(t) => t,
+            Self::Tab3d(t)           => t,
+            Self::Tab2d(t)           => t,
+            Self::Camera(t)          => t,
+            Self::CamProp(t)         => t,
+            Self::ParticleTracking(t)=> t,
+            Self::Project(t)         => t,
+            Self::FileBrowser(t)     => t,
+            Self::Plots(t)           => t,
+            Self::Help(t)            => t,
         }
     }
 }
@@ -156,12 +196,38 @@ impl RippSession {
     pub fn new() -> Self {
         Self {
             projects: BTreeMap::new(),
-            tabs: vec![
+            tabs_left: vec![
                 RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
                 RippTab::Tab2d(Tab2d::default()),
                 RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
             ],
+            tabs_right_top: vec![
+                RippTab::CamProp(TabCamProp),
+                RippTab::ParticleTracking(TabParticleTracking),
+            ],
+            tabs_right_bottom: vec![
+                RippTab::Project(TabProject),
+                RippTab::FileBrowser(TabFileBrowser),
+                RippTab::Plots(TabPlots),
+                RippTab::Help(TabHelp),
+            ],
             next_id: 0,
+        }
+    }
+
+    pub fn tabs(&self, area: TabArea) -> &Vec<RippTab> {
+        match area {
+            TabArea::Left        => &self.tabs_left,
+            TabArea::RightTop    => &self.tabs_right_top,
+            TabArea::RightBottom => &self.tabs_right_bottom,
+        }
+    }
+
+    pub fn tabs_mut(&mut self, area: TabArea) -> &mut Vec<RippTab> {
+        match area {
+            TabArea::Left        => &mut self.tabs_left,
+            TabArea::RightTop    => &mut self.tabs_right_top,
+            TabArea::RightBottom => &mut self.tabs_right_bottom,
         }
     }
 

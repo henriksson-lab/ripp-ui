@@ -89,7 +89,7 @@ fn main() {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
                 let mut s = session.borrow_mut();
-                if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs.get_mut(tab_idx) {
+                if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs_left.get_mut(tab_idx) {
                     tc.live = enabled;
                 }
             }
@@ -134,7 +134,7 @@ fn main() {
                     .unwrap_or(0);
                 let camera = {
                     let s = session.borrow();
-                    match s.tabs.get(tab_idx) {
+                    match s.tabs_left.get(tab_idx) {
                         Some(ripp::session::RippTab::Tab3d(t3)) => {
                             ripp::session::Camera3d {
                                 yaw:      t3.camera.yaw,

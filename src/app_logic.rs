@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use crate::{AppWindow, LeftTabEntry, ProjectTreeEntry};
-use crate::session::{RippSession, flatten_session};
+use crate::session::{RippSession, RippTab, flatten_session};
 use crate::renderer2d::Viewer2dRenderer;
 use crate::micromanager::CameraHandle;
 use crate::panes;
 
 // ── Shared model builders (used by multiple panes) ────────────────────────────
 
-pub fn build_left_tabs(session: &RippSession) -> slint::ModelRc<LeftTabEntry> {
-    let entries: Vec<LeftTabEntry> = session.tabs.iter()
+pub fn build_tabs(tabs: &[RippTab]) -> slint::ModelRc<LeftTabEntry> {
+    let entries: Vec<LeftTabEntry> = tabs.iter()
         .map(|t| LeftTabEntry { label: t.label().into(), tab_type: t.type_id() })
         .collect();
     Rc::new(slint::VecModel::from(entries)).into()
@@ -33,14 +33,16 @@ pub fn build_tree(session: &RippSession) -> slint::ModelRc<ProjectTreeEntry> {
 // ── AppLogic ──────────────────────────────────────────────────────────────────
 
 pub struct AppLogic {
-    pub session:           Rc<RefCell<RippSession>>,
-    pub viewer2d:          Rc<RefCell<Viewer2dRenderer>>,
-    pub cam:               CameraHandle,
-    pub last_camera_frame: Arc<Mutex<Option<(Vec<u8>, u32, u32)>>>,
-    pub live_running:      Arc<AtomicBool>,
-    pub props_refreshing:  Arc<AtomicBool>,
-    pub prev_tab_idx:      Rc<RefCell<usize>>,
-    pub cwd:               Rc<RefCell<PathBuf>>,
+    pub session:                Rc<RefCell<RippSession>>,
+    pub viewer2d:               Rc<RefCell<Viewer2dRenderer>>,
+    pub cam:                    CameraHandle,
+    pub last_camera_frame:      Arc<Mutex<Option<(Vec<u8>, u32, u32)>>>,
+    pub live_running:           Arc<AtomicBool>,
+    pub props_refreshing:       Arc<AtomicBool>,
+    pub prev_tab_idx:           Rc<RefCell<usize>>,
+    pub prev_right_top_idx:     Rc<RefCell<usize>>,
+    pub prev_right_bottom_idx:  Rc<RefCell<usize>>,
+    pub cwd:                    Rc<RefCell<PathBuf>>,
 }
 
 impl AppLogic {
@@ -53,10 +55,12 @@ impl AppLogic {
             viewer2d:          Rc::new(RefCell::new(Viewer2dRenderer::new())),
             cam,
             last_camera_frame: Arc::new(Mutex::new(None)),
-            live_running:      Arc::new(AtomicBool::new(false)),
-            props_refreshing:  Arc::new(AtomicBool::new(false)),
-            prev_tab_idx:      Rc::new(RefCell::new(0)),
-            cwd:               Rc::new(RefCell::new(cwd)),
+            live_running:           Arc::new(AtomicBool::new(false)),
+            props_refreshing:       Arc::new(AtomicBool::new(false)),
+            prev_tab_idx:           Rc::new(RefCell::new(0)),
+            prev_right_top_idx:     Rc::new(RefCell::new(0)),
+            prev_right_bottom_idx:  Rc::new(RefCell::new(0)),
+            cwd:                    Rc::new(RefCell::new(cwd)),
         }
     }
 
@@ -66,7 +70,11 @@ impl AppLogic {
     /// Pass the real live-loop starter on desktop; `|| {}` on the server.
     pub fn register_all<F: Fn() + 'static>(&self, app: &AppWindow, start_live: F) {
         panes::tabs::register(app, &self.session, &self.viewer2d,
-                              &self.live_running, &self.prev_tab_idx, start_live);
+                              &self.live_running,
+                              &self.prev_tab_idx,
+                              &self.prev_right_top_idx,
+                              &self.prev_right_bottom_idx,
+                              start_live);
         panes::viewer3d::register(app, &self.session);
         panes::viewer2d::register(app, &self.session, &self.viewer2d);
         panes::camera_view::register(app, &self.cam, &self.session, &self.last_camera_frame);

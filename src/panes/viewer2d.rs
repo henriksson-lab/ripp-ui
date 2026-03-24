@@ -15,7 +15,7 @@ pub fn upload(
 ) {
     let (proj_id, obj_id, z) = {
         let s = session.borrow();
-        match s.tabs.get(tab_idx) {
+        match s.tabs_left.get(tab_idx) {
             Some(RippTab::Tab2d(t)) if t.selected_proj_id >= 0 =>
                 (t.selected_proj_id, t.selected_obj_id, t.camera.z as u32),
             _ => return,
@@ -49,7 +49,7 @@ pub fn render(
 ) {
     let cam = {
         let s = session.borrow();
-        match s.tabs.get(tab_idx) {
+        match s.tabs_left.get(tab_idx) {
             Some(RippTab::Tab2d(t)) => Camera2d { x: t.camera.x, y: t.camera.y, zoom: t.camera.zoom },
             _ => return,
         }
@@ -109,7 +109,7 @@ pub fn register(
                 };
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
                         t.selected_proj_id = project_id;
                         t.selected_obj_id  = object_id;
                         t.z_max            = z_max;
@@ -137,7 +137,7 @@ pub fn register(
                 let tab_idx = ui.get_active_left_tab() as usize;
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
                         t.camera.x -= dx as f64 / t.camera.zoom;
                         t.camera.y -= dy as f64 / t.camera.zoom;
                     }
@@ -157,7 +157,7 @@ pub fn register(
                 let tab_idx = ui.get_active_left_tab() as usize;
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
                         t.camera.zoom *= (delta as f64 * 0.005_f64).exp();
                         t.camera.zoom = t.camera.zoom.clamp(0.01, 100.0);
                     }
@@ -178,7 +178,7 @@ pub fn register(
                 let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
                         t.color = color;
                     }
                 }
@@ -196,7 +196,7 @@ pub fn register(
                 let tab_idx = ui.get_active_left_tab() as usize;
                 {
                     let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs.get_mut(tab_idx) {
+                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
                         t.camera.z = z.round() as f64;
                     }
                 }

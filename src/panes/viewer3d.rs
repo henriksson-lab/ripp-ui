@@ -20,7 +20,7 @@ pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
                 let mut s = session.borrow_mut();
-                if let Some(RippTab::Tab3d(t3)) = s.tabs.get_mut(tab_idx) {
+                if let Some(RippTab::Tab3d(t3)) = s.tabs_left.get_mut(tab_idx) {
                     t3.camera.yaw   -= dx * 0.005;
                     t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
                 }
@@ -35,7 +35,7 @@ pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
                 let mut s = session.borrow_mut();
-                if let Some(RippTab::Tab3d(t3)) = s.tabs.get_mut(tab_idx) {
+                if let Some(RippTab::Tab3d(t3)) = s.tabs_left.get_mut(tab_idx) {
                     t3.camera.distance = (t3.camera.distance * (-(delta * 0.005_f32)).exp())
                         .clamp(0.5, 100.0);
                 }

@@ -1,122 +1,44 @@
-import { Slider } from "std-widgets.slint";
+import { FileEntry, DevicePropEntry, LeftTabEntry, ProjectTreeEntry } from "types.slint";
+export { FileEntry, DevicePropEntry, LeftTabEntry, ProjectTreeEntry }
 
-component RangeSlider {
-    in-out property <float> minimum: 0.0;
-    in-out property <float> maximum: 255.0;
-    in-out property <float> lo: 0.0;
-    in-out property <float> hi: 255.0;
-    callback changed(float, float);
-
-    height: 20px;
-    private property <bool> moving-lo: false;
-
-    // Track
-    Rectangle {
-        y: (parent.height - 4px) / 2;
-        height: 4px;
-        width: parent.width;
-        background: #333333;
-        border-radius: 2px;
-
-        Rectangle {
-            x: (root.lo - root.minimum) / (root.maximum - root.minimum) * parent.width;
-            width: (root.hi - root.lo) / (root.maximum - root.minimum) * parent.width;
-            height: 4px;
-            background: #6699CC;
-            border-radius: 2px;
-        }
-    }
-
-    // Lo knob
-    Rectangle {
-        x: (root.lo - root.minimum) / (root.maximum - root.minimum) * (parent.width - self.width);
-        y: (parent.height - self.height) / 2;
-        width: 12px; height: 12px;
-        border-radius: 6px;
-        background: #CCCCCC;
-    }
-
-    // Hi knob
-    Rectangle {
-        x: (root.hi - root.minimum) / (root.maximum - root.minimum) * (parent.width - self.width);
-        y: (parent.height - self.height) / 2;
-        width: 12px; height: 12px;
-        border-radius: 6px;
-        background: #CCCCCC;
-    }
-
-    TouchArea {
-        mouse-cursor: ew-resize;
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.down) {
-                let mx = self.mouse-x / parent.width;
-                let lo-frac = (root.lo - root.minimum) / (root.maximum - root.minimum);
-                let hi-frac = (root.hi - root.minimum) / (root.maximum - root.minimum);
-                root.moving-lo = abs(mx - lo-frac) <= abs(mx - hi-frac);
-            }
-        }
-        moved => {
-            if (self.pressed) {
-                let frac = clamp(self.mouse-x / parent.width, 0.0, 1.0);
-                let val = root.minimum + frac * (root.maximum - root.minimum);
-                if (root.moving-lo) {
-                    root.lo = clamp(val, root.minimum, root.hi);
-                } else {
-                    root.hi = clamp(val, root.lo, root.maximum);
-                }
-                root.changed(root.lo, root.hi);
-            }
-        }
-    }
-}
-
-struct FileEntry {
-    name: string,
-    is-dir: bool,
-    size: string,
-}
-
-struct DevicePropEntry {
-    device: string,
-    property: string,
-    value: string,
-}
-
-struct LeftTabEntry {
-    label: string,
-    tab-type: int,   // 0=3D View, 1=2D Viewer, 2=Camera
-}
-
-struct ProjectTreeEntry {
-    label: string,
-    indent: int,
-    object-id: int,
-    project-id: int,
-}
+import { LeftPane }                    from "panels/left_pane.slint";
+import { RightTopPane, RightBottomPane } from "panels/right_panes.slint";
 
 export component AppWindow inherits Window {
     title: "RIPP — Rust Imaging Processing Platform";
     min-width: 640px;
     min-height: 400px;
 
-    // Set by Rust each frame
+    // ── Properties (Rust-visible) ─────────────────────────────────────────────
     in property <image> teapot-image;
     in property <image> camera-image;
-
-    // Internal UI state
-    private property <bool> file-menu-open: false;
-    private property <bool> view-menu-open: false;
-    private property <bool> help-menu-open: false;
-    private property <bool> about-open: false;
-
-    in property <bool> server-mode: false;
+    in property <bool>  server-mode: false;
     in-out property <string> error-message: "";
     in property <[FileEntry]> file-list;
     in property <string> current-path: ".";
     in property <[DevicePropEntry]> device-props;
     in property <[ProjectTreeEntry]> project-tree;
 
-    // Only actions that need Rust
+    in-out property <int>  selected-project-id: -1;
+    in-out property <int>  active-left-tab: 0;
+    in-out property <[LeftTabEntry]> left-tabs;
+    in-out property <[LeftTabEntry]> right-top-tabs;
+    in-out property <int>  active-right-top-tab: 0;
+    in-out property <[LeftTabEntry]> right-bottom-tabs;
+    in-out property <int>  active-right-bottom-tab: 0;
+
+    in property <image> viewer2d-image;
+    in-out property <bool>  viewer2d-image-loaded: false;
+    in-out property <float> viewer2d-lo: 0.0;
+    in-out property <float> viewer2d-hi: 255.0;
+    in-out property <float> viewer2d-z: 0;
+    in-out property <float> viewer2d-z-max: 0;
+
+    in-out property <bool>  live-snap: false;
+    in-out property <float> camera-lo: 0.0;
+    in-out property <float> camera-hi: 255.0;
+
+    // ── Callbacks (Rust-visible) ──────────────────────────────────────────────
     callback quit();
     callback close-left-tab(int);
     callback new-project();
@@ -124,63 +46,38 @@ export component AppWindow inherits Window {
     callback add-tab-2d();
     callback add-tab-camera();
     callback close-project();
-    callback open-file(string);   // passes selected filename (not full path)
-    callback project-tree-selected(int);  // passes object-id
-    private property <int> selected-row: -1;
-    in-out property <int> selected-project-id: -1;
+    callback open-file(string);
+    callback project-tree-selected(int);
     callback navigate-to(string);
     callback snap-requested();
     callback live-toggled(bool);
     callback camera-panned(float, float);
     callback camera-scrolled(float);
-    in-out property <float> camera-lo: 0.0;
-    in-out property <float> camera-hi: 255.0;
     callback camera-settings-changed();
-    in-out property <bool> live-snap: false;
     callback left-tab-activated(int);
-    changed active-left-tab => { root.left-tab-activated(root.active-left-tab); }
-    private property <float> cam-drag-x;
-    private property <float> cam-drag-y;
-
-    in-out property <int> active-tab: 0;      // 0=Project, 1=Files, 2=Plots, 3=Help
-    in-out property <int> active-left-tab: 0;
-    in-out property <[LeftTabEntry]> left-tabs;
-    private property <bool> viewer2d-dropdown-open: false;
-    private property <int>  viewer2d-selected-row: -1;
-    private property <string> viewer2d-selected-label: "";
-    in property <image> viewer2d-image;
-    in-out property <bool> viewer2d-image-loaded: false;
-    callback viewer2d-object-selected(int, int);  // project-id, object-id
-    in-out property <float> viewer2d-lo: 0.0;    // black point (raw pixel value)
-    in-out property <float> viewer2d-hi: 255.0;  // white point (raw pixel value)
-    in-out property <float> viewer2d-z: 0;
-    in-out property <float> viewer2d-z-max: 0;
-    callback viewer3d-panned(float, float);
-    callback viewer3d-scrolled(float);
-    private property <float> v3d-drag-x;
-    private property <float> v3d-drag-y;
+    callback close-right-top-tab(int);
+    callback right-top-tab-activated(int);
+    callback close-right-bottom-tab(int);
+    callback right-bottom-tab-activated(int);
+    callback viewer2d-object-selected(int, int);
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
     callback viewer2d-settings-changed();
     callback viewer2d-z-changed(float);
-    private property <float> v2d-drag-x;
-    private property <float> v2d-drag-y;
+    callback viewer3d-panned(float, float);
+    callback viewer3d-scrolled(float);
 
-    private property <int> right-top-tab: 0;   // 0=Cam prop, 1=Part. tracking
+    changed active-left-tab        => { root.left-tab-activated(root.active-left-tab); }
+    changed active-right-top-tab    => { root.right-top-tab-activated(root.active-right-top-tab); }
+    changed active-right-bottom-tab => { root.right-bottom-tab-activated(root.active-right-bottom-tab); }
 
-    // Column widths for device properties table
-    private property <length> dp-col1-width: 100px;
-    private property <length> dp-col3-width: 120px;
-    private property <length> dp-drag1: 0;
-    private property <length> dp-drag3: 0;
+    // ── Private menu state ────────────────────────────────────────────────────
+    private property <bool> file-menu-open: false;
+    private property <bool> view-menu-open: false;
+    private property <bool> help-menu-open: false;
+    private property <bool> about-open: false;
 
-    // Column widths for file list table
-    private property <length> file-size-width: 72px;
-    private property <length> file-drag: 0;
-    private property <int> selected-file-row: -1;
-    private property <bool> selected-file-is-dir: false;
-
-    // ── Main layout ──────────────────────────────────────────────────────────
+    // ── Main layout ───────────────────────────────────────────────────────────
     VerticalLayout {
         // Menubar
         Rectangle {
@@ -193,8 +90,7 @@ export component AppWindow inherits Window {
                 alignment: start;
 
                 Rectangle {
-                    width: 60px;
-                    height: 28px;
+                    width: 60px; height: 28px;
                     background: file-btn.has-hover ? #3D3D3D : transparent;
                     border-radius: 3px;
                     file-btn := TouchArea {
@@ -205,17 +101,12 @@ export component AppWindow inherits Window {
                             root.file-menu-open = !root.file-menu-open;
                         }
                     }
-                    Text {
-                        text: "File";
-                        color: white;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                    Text { text: "File"; color: white;
+                           horizontal-alignment: center; vertical-alignment: center; }
                 }
 
                 Rectangle {
-                    width: 60px;
-                    height: 28px;
+                    width: 60px; height: 28px;
                     background: view-btn.has-hover ? #3D3D3D : transparent;
                     border-radius: 3px;
                     view-btn := TouchArea {
@@ -226,17 +117,12 @@ export component AppWindow inherits Window {
                             root.view-menu-open = !root.view-menu-open;
                         }
                     }
-                    Text {
-                        text: "View";
-                        color: white;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                    Text { text: "View"; color: white;
+                           horizontal-alignment: center; vertical-alignment: center; }
                 }
 
                 Rectangle {
-                    width: 60px;
-                    height: 28px;
+                    width: 60px; height: 28px;
                     background: help-btn.has-hover ? #3D3D3D : transparent;
                     border-radius: 3px;
                     help-btn := TouchArea {
@@ -247,12 +133,8 @@ export component AppWindow inherits Window {
                             root.help-menu-open = !root.help-menu-open;
                         }
                     }
-                    Text {
-                        text: "Help";
-                        color: white;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                    Text { text: "Help"; color: white;
+                           horizontal-alignment: center; vertical-alignment: center; }
                 }
             }
         }
@@ -261,830 +143,71 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             vertical-stretch: 1;
 
-            // Left pane: tabbed
-            VerticalLayout {
+            // Left pane
+            LeftPane {
                 horizontal-stretch: 1;
-
-                // Tab bar
-                Rectangle {
-                    height: 28px;
-                    background: #222222;
-                    HorizontalLayout {
-                        spacing: 0px;
-                        alignment: start;
-
-                        for tab[i] in root.left-tabs: Rectangle {
-                            width: 94px;
-                            height: 28px;
-                            background: root.active-left-tab == i ? #3A3A3A : #222222;
-                            ltab-btn := TouchArea { clicked => { root.active-left-tab = i; } }
-                            HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 2px;
-                                spacing: 2px;
-                                Text {
-                                    text: tab.label;
-                                    color: white;
-                                    font-size: 13px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                }
-                                Rectangle {
-                                    width: 16px;
-                                    height: 16px;
-                                    border-radius: 3px;
-                                    background: close-tab-btn.has-hover ? #555555 : transparent;
-                                    close-tab-btn := TouchArea {
-                                        clicked => { root.close-left-tab(i); }
-                                    }
-                                    Text {
-                                        text: "×";
-                                        color: #AAAAAA;
-                                        font-size: 13px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 3D View tab
-                if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 0: Rectangle {
-                    vertical-stretch: 1;
-                    Image {
-                        source: root.teapot-image;
-                        width: 100%;
-                        height: 100%;
-                        image-fit: fill;
-                    }
-                    v3d-ta := TouchArea {
-                        mouse-cursor: crosshair;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.v3d-drag-x = self.mouse-x / 1px;
-                                root.v3d-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        moved => {
-                            if (self.pressed) {
-                                root.viewer3d-panned(
-                                    self.mouse-x / 1px - root.v3d-drag-x,
-                                    self.mouse-y / 1px - root.v3d-drag-y
-                                );
-                                root.v3d-drag-x = self.mouse-x / 1px;
-                                root.v3d-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        scroll-event(e) => {
-                            root.viewer3d-scrolled(e.delta-y / 1px);
-                            return EventResult.accept;
-                        }
-                    }
-                }
-
-                // Camera tab
-                if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 2: VerticalLayout {
-                    vertical-stretch: 1;
-
-                    Rectangle {
-                        vertical-stretch: 1;
-                        Image {
-                            source: root.camera-image;
-                            image-fit: contain;
-                            width: 100%;
-                            height: 100%;
-                        }
-                        cam-ta := TouchArea {
-                            mouse-cursor: crosshair;
-                            pointer-event(e) => {
-                                if (e.kind == PointerEventKind.down) {
-                                    root.cam-drag-x = self.mouse-x / 1px;
-                                    root.cam-drag-y = self.mouse-y / 1px;
-                                }
-                            }
-                            moved => {
-                                if (self.pressed) {
-                                    root.camera-panned(
-                                        self.mouse-x / 1px - root.cam-drag-x,
-                                        self.mouse-y / 1px - root.cam-drag-y
-                                    );
-                                    root.cam-drag-x = self.mouse-x / 1px;
-                                    root.cam-drag-y = self.mouse-y / 1px;
-                                }
-                            }
-                            scroll-event(e) => {
-                                root.camera-scrolled(e.delta-y / 1px);
-                                return EventResult.accept;
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        height: 32px;
-                        background: #1A1A1A;
-                        HorizontalLayout {
-                            padding: 4px;
-                            spacing: 6px;
-                            alignment: start;
-
-                            Rectangle {
-                                width: 60px; height: 24px;
-                                background: snap-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                border-radius: 3px;
-                                snap-btn := TouchArea { clicked => { root.snap-requested(); } }
-                                Text { text: "Snap"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-
-                            Rectangle {
-                                width: 60px; height: 24px;
-                                background: live-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                border-radius: 3px;
-                                border-width: root.live-snap ? 1px : 0px;
-                                border-color: #6699CC;
-                                live-btn := TouchArea {
-                                    clicked => {
-                                        root.live-snap = !root.live-snap;
-                                        root.live-toggled(root.live-snap);
-                                    }
-                                }
-                                Text { text: "Live"; font-size: 12px;
-                                       color: root.live-snap ? #9ABFDD : white;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        height: 28px;
-                        background: #1A1A1A;
-                        HorizontalLayout {
-                            padding-left: 6px; padding-right: 6px;
-                            padding-top: 4px;  padding-bottom: 4px;
-                            RangeSlider {
-                                horizontal-stretch: 1;
-                                minimum: 0.0; maximum: 255.0;
-                                lo <=> root.camera-lo;
-                                hi <=> root.camera-hi;
-                                changed(l, h) => { root.camera-settings-changed(); }
-                            }
-                        }
-                    }
-                }
-
-                // 2D Viewer tab
-                if root.active-left-tab < root.left-tabs.length && root.left-tabs[root.active-left-tab].tab-type == 1: VerticalLayout {
-                    vertical-stretch: 1;
-
-                    // Main view area + Z scrollbar
-                    HorizontalLayout {
-                        vertical-stretch: 1;
-
-                        Rectangle {
-                            horizontal-stretch: 1;
-                            background: #111111;
-                            if root.viewer2d-image-loaded: Image {
-                                source: root.viewer2d-image;
-                                image-fit: fill;
-                                width: 100%;
-                                height: 100%;
-                            }
-                            if !root.viewer2d-image-loaded: Text {
-                                text: "No image selected";
-                                color: #555555;
-                                font-size: 14px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                            v2d-ta := TouchArea {
-                                mouse-cursor: crosshair;
-                                pointer-event(e) => {
-                                    if (e.kind == PointerEventKind.down) {
-                                        root.v2d-drag-x = self.mouse-x / 1px;
-                                        root.v2d-drag-y = self.mouse-y / 1px;
-                                    }
-                                }
-                                moved => {
-                                    if (self.pressed) {
-                                        root.viewer2d-panned(
-                                            self.mouse-x / 1px - root.v2d-drag-x,
-                                            self.mouse-y / 1px - root.v2d-drag-y
-                                        );
-                                        root.v2d-drag-x = self.mouse-x / 1px;
-                                        root.v2d-drag-y = self.mouse-y / 1px;
-                                    }
-                                }
-                                scroll-event(e) => {
-                                    root.viewer2d-scrolled(e.delta-y / 1px);
-                                    return EventResult.accept;
-                                }
-                            }
-                        }
-
-                        // Z-plane scrollbar
-                        Rectangle {
-                            width: 20px;
-                            background: #111111;
-                            Slider {
-                                width: 20px;
-                                height: parent.height;
-                                orientation: vertical;
-                                minimum: 0;
-                                maximum: root.viewer2d-z-max;
-                                value <=> root.viewer2d-z;
-                                enabled: root.viewer2d-z-max > 0;
-                                changed(v) => { root.viewer2d-z-changed(v); }
-                            }
-                        }
-                    }
-
-                    // Window / level range slider
-                    Rectangle {
-                        height: 28px;
-                        background: #1A1A1A;
-                        HorizontalLayout {
-                            padding-left: 6px;
-                            padding-right: 6px;
-                            padding-top: 4px;
-                            padding-bottom: 4px;
-                            RangeSlider {
-                                horizontal-stretch: 1;
-                                minimum: 0.0; maximum: 255.0;
-                                lo <=> root.viewer2d-lo;
-                                hi <=> root.viewer2d-hi;
-                                changed(l, h) => { root.viewer2d-settings-changed(); }
-                            }
-                        }
-                    }
-
-                    // Inline dropdown list (expands upward from the selector bar)
-                    if root.viewer2d-dropdown-open: Rectangle {
-                        height: min(200px, dd-entries.preferred-height);
-                        background: #1E1E1E;
-                        border-width: 1px;
-                        border-color: #444444;
-                        clip: true;
-
-                        dd-flick := Flickable {
-                            width: parent.width;
-                            height: parent.height;
-                            viewport-height: dd-entries.preferred-height;
-
-                            dd-entries := VerticalLayout {
-                                for entry[i] in root.project-tree: Rectangle {
-                                    height: 22px;
-                                    background: dd-row-ta.has-hover ? #2A3A4A
-                                              : root.viewer2d-selected-row == i ? #1E3A5F : #1E1E1E;
-                                    dd-row-ta := TouchArea {
-                                        clicked => {
-                                            root.viewer2d-selected-row = i;
-                                            root.viewer2d-selected-label = entry.label;
-                                            root.viewer2d-dropdown-open = false;
-                                            root.viewer2d-object-selected(entry.project-id, entry.object-id);
-                                        }
-                                    }
-                                    HorizontalLayout {
-                                        padding-left: 8px + entry.indent * 16px;
-                                        padding-right: 4px;
-                                        Text {
-                                            text: entry.label;
-                                            color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                            font-size: 12px;
-                                            vertical-alignment: center;
-                                            overflow: elide;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Selector bar
-                    Rectangle {
-                        height: 32px;
-                        background: #1A1A1A;
-                        HorizontalLayout {
-                            padding: 4px;
-
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 24px;
-                                background: dd-btn.has-hover ? #3A3A3A : #2A2A2A;
-                                border-radius: 3px;
-                                dd-btn := TouchArea {
-                                    clicked => { root.viewer2d-dropdown-open = !root.viewer2d-dropdown-open; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 8px;
-                                    padding-right: 8px;
-                                    Text {
-                                        text: root.viewer2d-selected-label == "" ? "Select object..." : root.viewer2d-selected-label;
-                                        color: root.viewer2d-selected-label == "" ? #666666 : #CCCCCC;
-                                        font-size: 12px;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                    }
-                                    Text {
-                                        text: "▼";
-                                        color: #888888;
-                                        font-size: 10px;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                teapot-image:            root.teapot-image;
+                camera-image:            root.camera-image;
+                viewer2d-image:          root.viewer2d-image;
+                viewer2d-image-loaded <=> root.viewer2d-image-loaded;
+                viewer2d-lo           <=> root.viewer2d-lo;
+                viewer2d-hi           <=> root.viewer2d-hi;
+                viewer2d-z            <=> root.viewer2d-z;
+                viewer2d-z-max        <=> root.viewer2d-z-max;
+                live-snap             <=> root.live-snap;
+                camera-lo             <=> root.camera-lo;
+                camera-hi             <=> root.camera-hi;
+                left-tabs             <=> root.left-tabs;
+                active-left-tab       <=> root.active-left-tab;
+                project-tree:            root.project-tree;
+                close-left-tab(i)        => { root.close-left-tab(i); }
+                viewer3d-panned(dx, dy)  => { root.viewer3d-panned(dx, dy); }
+                viewer3d-scrolled(d)     => { root.viewer3d-scrolled(d); }
+                viewer2d-panned(dx, dy)  => { root.viewer2d-panned(dx, dy); }
+                viewer2d-scrolled(d)     => { root.viewer2d-scrolled(d); }
+                viewer2d-settings-changed()        => { root.viewer2d-settings-changed(); }
+                viewer2d-z-changed(v)              => { root.viewer2d-z-changed(v); }
+                viewer2d-object-selected(pid, oid) => { root.viewer2d-object-selected(pid, oid); }
+                snap-requested()         => { root.snap-requested(); }
+                live-toggled(v)          => { root.live-toggled(v); }
+                camera-panned(dx, dy)    => { root.camera-panned(dx, dy); }
+                camera-scrolled(d)       => { root.camera-scrolled(d); }
+                camera-settings-changed() => { root.camera-settings-changed(); }
             }
 
-            // Right pane: split vertically
+            // Right pane
             VerticalLayout {
                 horizontal-stretch: 1;
 
-                // Top: tabbed panel (Cam prop / Part. tracking)
-                VerticalLayout {
+                RightTopPane {
                     vertical-stretch: 1;
-
-                    // Tab bar
-                    Rectangle {
-                        height: 28px;
-                        background: #222222;
-                        HorizontalLayout {
-                            spacing: 0px;
-                            alignment: start;
-                            Rectangle {
-                                width: 80px; height: 28px;
-                                background: root.right-top-tab == 0 ? #3A3A3A : #222222;
-                                rt-tab0 := TouchArea { clicked => { root.right-top-tab = 0; } }
-                                Text { text: "Cam prop"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            Rectangle {
-                                width: 100px; height: 28px;
-                                background: root.right-top-tab == 1 ? #3A3A3A : #222222;
-                                rt-tab1 := TouchArea { clicked => { root.right-top-tab = 1; } }
-                                Text { text: "Part. tracking"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                        }
-                    }
-                    Rectangle { height: 1px; background: #444444; }
-
-                    // Cam prop panel
-                    if root.right-top-tab == 0: VerticalLayout {
-                    vertical-stretch: 1;
-
-                    // Column header
-                    Rectangle {
-                        height: 20px;
-                        background: #000000;
-                        HorizontalLayout {
-                            padding-left: 4px;
-                            padding-right: 4px;
-                            Text { text: "Device";   color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
-                            Rectangle {
-                                width: 5px; height: parent.height;
-                                background: dph1.pressed ? #666666 : (dph1.has-hover ? #444444 : transparent);
-                                dph1 := TouchArea {
-                                    mouse-cursor: col-resize;
-                                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag1 = self.mouse-x; } }
-                                    moved => { root.dp-col1-width = max(40px, root.dp-col1-width + self.mouse-x - root.dp-drag1); }
-                                }
-                            }
-                            Text { text: "Property"; color: #888888; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                            Rectangle {
-                                width: 5px; height: parent.height;
-                                background: dph3.pressed ? #666666 : (dph3.has-hover ? #444444 : transparent);
-                                dph3 := TouchArea {
-                                    mouse-cursor: col-resize;
-                                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag3 = self.mouse-x; } }
-                                    moved => { root.dp-col3-width = max(40px, root.dp-col3-width - (self.mouse-x - root.dp-drag3)); }
-                                }
-                            }
-                            Text { text: "Value";    color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
-                        }
-                    }
-                    Rectangle { height: 1px; background: #2A2A2A; }
-
-                    Rectangle {
-                        vertical-stretch: 1;
-                        background: #000000;
-                        clip: true;
-
-                        prop-flick := Flickable {
-                            width: parent.width - 8px;
-                            height: parent.height;
-                            viewport-height: prop-entries.preferred-height;
-
-                            prop-entries := VerticalLayout {
-                                for entry in root.device-props: Rectangle {
-                                    height: 22px;
-                                    background: prop-row.has-hover ? #1E1E1E : #000000;
-                                    prop-row := TouchArea {}
-                                    HorizontalLayout {
-                                        padding-left: 4px;
-                                        padding-right: 4px;
-                                        spacing: 0px;
-                                        Text { text: entry.device;   color: #6699CC; font-size: 12px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
-                                        Rectangle { width: 5px; }
-                                        Text { text: entry.property; color: #CCCCCC; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                                        Rectangle { width: 5px; }
-                                        Text { text: entry.value;    color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            x: parent.width - 6px;
-                            width: 6px;
-                            height: parent.height;
-                            background: #111111;
-                            Rectangle {
-                                visible: prop-flick.viewport-height > prop-flick.height;
-                                width: 4px;
-                                x: 1px;
-                                y: (-prop-flick.viewport-y / prop-flick.viewport-height) * parent.height;
-                                height: max(20px, (prop-flick.height / prop-flick.viewport-height) * parent.height);
-                                background: #555555;
-                                border-radius: 2px;
-                            }
-                        }
-                    }
-                    } // end Cam prop VerticalLayout
-
-                    // Part. tracking panel (empty placeholder)
-                    if root.right-top-tab == 1: VerticalLayout {
-                        vertical-stretch: 1;
-                        alignment: center;
-                        Text {
-                            text: "Particle tracking";
-                            color: #555555;
-                            font-size: 13px;
-                            horizontal-alignment: center;
-                        }
-                    }
+                    device-props:   root.device-props;
+                    tabs        <=> root.right-top-tabs;
+                    active-tab  <=> root.active-right-top-tab;
+                    close-tab(i) => { root.close-right-top-tab(i); }
                 }
 
-                // Divider
                 Rectangle { height: 1px; background: #444444; }
 
-                // Bottom: tabbed panel
-                VerticalLayout {
+                RightBottomPane {
                     vertical-stretch: 1;
-
-                    // Tab bar
-                    Rectangle {
-                        height: 28px;
-                        background: #222222;
-                        HorizontalLayout {
-                            spacing: 0px;
-                            alignment: start;
-
-                            Rectangle {
-                                width: 70px;
-                                height: 28px;
-                                background: root.active-tab == 0 ? #3A3A3A : #222222;
-                                tab-proj-btn := TouchArea { clicked => { root.active-tab = 0; } }
-                                Text {
-                                    text: "Project";
-                                    color: white;
-                                    font-size: 13px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            Rectangle {
-                                width: 60px;
-                                height: 28px;
-                                background: root.active-tab == 1 ? #3A3A3A : #222222;
-                                tab0-btn := TouchArea { clicked => { root.active-tab = 1; } }
-                                Text {
-                                    text: "Files";
-                                    color: white;
-                                    font-size: 13px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            Rectangle {
-                                width: 60px;
-                                height: 28px;
-                                background: root.active-tab == 2 ? #3A3A3A : #222222;
-                                tab1-btn := TouchArea { clicked => { root.active-tab = 2; } }
-                                Text {
-                                    text: "Plots";
-                                    color: white;
-                                    font-size: 13px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            Rectangle {
-                                width: 60px;
-                                height: 28px;
-                                background: root.active-tab == 3 ? #3A3A3A : #222222;
-                                tab2-btn := TouchArea { clicked => { root.active-tab = 3; } }
-                                Text {
-                                    text: "Help";
-                                    color: white;
-                                    font-size: 13px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
-
-                    // Project tab
-                    if root.active-tab == 0: VerticalLayout {
-                        vertical-stretch: 1;
-
-                        Rectangle {
-                            vertical-stretch: 1;
-                            background: #000000;
-                            clip: true;
-
-                            proj-flick := Flickable {
-                                width: parent.width - 8px;
-                                height: parent.height;
-                                viewport-height: proj-entries.preferred-height;
-
-                                proj-entries := VerticalLayout {
-                                    for entry[i] in root.project-tree: Rectangle {
-                                        height: 22px;
-                                        background: root.selected-row == i ? #1E3A5F : #000000;
-                                        row-ta := TouchArea {
-                                            clicked => {
-                                                root.selected-row = i;
-                                                root.project-tree-selected(entry.object-id);
-                                                if (entry.indent == 0) {
-                                                    root.selected-project-id = entry.object-id;
-                                                }
-                                            }
-                                        }
-                                        HorizontalLayout {
-                                            padding-left: 8px + entry.indent * 16px;
-                                            padding-right: 4px;
-                                            Text {
-                                                text: entry.label;
-                                                color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                                font-size: 13px;
-                                                vertical-alignment: center;
-                                                overflow: elide;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                x: parent.width - 6px;
-                                width: 6px;
-                                height: parent.height;
-                                background: #111111;
-                                Rectangle {
-                                    visible: proj-flick.viewport-height > proj-flick.height;
-                                    width: 4px;
-                                    x: 1px;
-                                    y: (-proj-flick.viewport-y / proj-flick.viewport-height) * parent.height;
-                                    height: max(20px, (proj-flick.height / proj-flick.viewport-height) * parent.height);
-                                    background: #555555;
-                                    border-radius: 2px;
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            height: 32px;
-                            background: #1A1A1A;
-                            HorizontalLayout {
-                                padding: 4px;
-                                spacing: 6px;
-                                alignment: start;
-
-                                Rectangle {
-                                    width: 60px; height: 24px;
-                                    background: close-proj-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                    border-radius: 3px;
-                                    close-proj-btn := TouchArea { clicked => { root.close-project(); } }
-                                    Text { text: "Close"; color: white; font-size: 12px;
-                                           horizontal-alignment: center; vertical-alignment: center; }
-                                }
-                            }
-                        }
-                    }
-
-                    // Files tab
-                    if root.active-tab == 1: VerticalLayout {
-                        vertical-stretch: 1;
-
-                        // Path bar
-                        Rectangle {
-                            height: 26px;
-                            background: #1E1E1E;
-                            HorizontalLayout {
-                                padding-left: 4px;
-                                padding-right: 4px;
-                                spacing: 4px;
-
-                                // Up button
-                                Rectangle {
-                                    width: 28px;
-                                    background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
-                                    border-radius: 3px;
-                                    up-btn := TouchArea {
-                                        clicked => { root.navigate-to(".."); }
-                                    }
-                                    Text {
-                                        text: "↑";
-                                        color: #AAAAAA;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-
-                                Text {
-                                    text: root.current-path;
-                                    color: #AAAAAA;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                    horizontal-stretch: 1;
-                                }
-                            }
-                        }
-
-                        Rectangle { height: 1px; background: #333333; }
-
-                        // Table header
-                        Rectangle {
-                            height: 20px;
-                            background: #000000;
-                            HorizontalLayout {
-                                padding-left: 24px;  // 8px margin + 12px icon + 4px gap
-                                padding-right: 4px;
-                                Text {
-                                    text: "Name";
-                                    color: #888888;
-                                    font-size: 11px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                                Rectangle {
-                                    width: 5px; height: parent.height;
-                                    background: fh.pressed ? #666666 : (fh.has-hover ? #444444 : transparent);
-                                    fh := TouchArea {
-                                        mouse-cursor: col-resize;
-                                        pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.file-drag = self.mouse-x; } }
-                                        moved => { root.file-size-width = max(40px, root.file-size-width - (self.mouse-x - root.file-drag)); }
-                                    }
-                                }
-                                Text {
-                                    text: "Size";
-                                    color: #888888;
-                                    font-size: 11px;
-                                    vertical-alignment: center;
-                                    width: root.file-size-width;
-                                    horizontal-alignment: right;
-                                }
-                            }
-                        }
-                        Rectangle { height: 1px; background: #2A2A2A; }
-
-                        // File list with custom scrollbar (Flickable avoids native frame)
-                        Rectangle {
-                            vertical-stretch: 1;
-                            background: #000000;
-                            clip: true;
-
-                            file-flick := Flickable {
-                                width: parent.width - 8px;
-                                height: parent.height;
-                                viewport-height: file-entries.preferred-height;
-
-                                file-entries := VerticalLayout {
-                                    for entry[i] in root.file-list: Rectangle {
-                                        height: 22px;
-                                        background: root.selected-file-row == i ? #1E3A5F
-                                                  : entry-area.has-hover ? #1E1E1E : #000000;
-                                        entry-area := TouchArea {
-                                            clicked => {
-                                                root.selected-file-row = i;
-                                                root.selected-file-is-dir = entry.is-dir;
-                                                if (entry.is-dir) {
-                                                    root.selected-file-row = -1;
-                                                    root.selected-file-is-dir = false;
-                                                    root.navigate-to(entry.name);
-                                                }
-                                            }
-                                            double-clicked => {
-                                                if (!entry.is-dir) {
-                                                    root.open-file(entry.name);
-                                                }
-                                            }
-                                        }
-                                        HorizontalLayout {
-                                            padding-left: 8px;
-                                            padding-right: 4px;
-                                            spacing: 4px;
-                                            Text {
-                                                text: entry.is-dir ? "▶" : " ";
-                                                color: #6699CC;
-                                                font-size: 11px;
-                                                vertical-alignment: center;
-                                                width: 12px;
-                                            }
-                                            Text {
-                                                text: entry.name;
-                                                color: entry.is-dir ? #9ABFDD : #CCCCCC;
-                                                font-size: 13px;
-                                                vertical-alignment: center;
-                                                horizontal-stretch: 1;
-                                                overflow: elide;
-                                            }
-                                            Text {
-                                                text: entry.size;
-                                                color: #777777;
-                                                font-size: 12px;
-                                                vertical-alignment: center;
-                                                width: root.file-size-width;
-                                                horizontal-alignment: right;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Custom scrollbar track
-                            Rectangle {
-                                x: parent.width - 6px;
-                                width: 6px;
-                                height: parent.height;
-                                background: #111111;
-
-                                // Thumb — only visible when content overflows
-                                Rectangle {
-                                    visible: file-flick.viewport-height > file-flick.height;
-                                    width: 4px;
-                                    x: 1px;
-                                    y: (-file-flick.viewport-y / file-flick.viewport-height) * parent.height;
-                                    height: max(20px, (file-flick.height / file-flick.viewport-height) * parent.height);
-                                    background: #555555;
-                                    border-radius: 2px;
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            height: 32px;
-                            background: #1A1A1A;
-                            HorizontalLayout {
-                                padding: 4px;
-                                spacing: 6px;
-                                alignment: start;
-
-                                Rectangle {
-                                    width: 60px; height: 24px;
-                                    opacity: root.selected-file-row >= 0 && !root.selected-file-is-dir ? 1.0 : 0.4;
-                                    background: open-file-btn.has-hover && root.selected-file-row >= 0 && !root.selected-file-is-dir ? #3D3D3D : #2A2A2A;
-                                    border-radius: 3px;
-                                    open-file-btn := TouchArea {
-                                        clicked => {
-                                            if (root.selected-file-row >= 0 && !root.selected-file-is-dir) {
-                                                root.open-file(root.file-list[root.selected-file-row].name);
-                                            }
-                                        }
-                                    }
-                                    Text { text: "Open"; color: white; font-size: 12px;
-                                           horizontal-alignment: center; vertical-alignment: center; }
-                                }
-                            }
-                        }
-                    }
-
-                    // Plots tab
-                    if root.active-tab == 2: Rectangle {
-                        vertical-stretch: 1;
-                        background: #111111;
-                    }
-
-                    // Help tab
-                    if root.active-tab == 3: Rectangle {
-                        vertical-stretch: 1;
-                        background: #111111;
-                    }
+                    project-tree:            root.project-tree;
+                    file-list:               root.file-list;
+                    current-path:            root.current-path;
+                    tabs                <=> root.right-bottom-tabs;
+                    active-tab          <=> root.active-right-bottom-tab;
+                    selected-project-id <=> root.selected-project-id;
+                    close-tab(i)            => { root.close-right-bottom-tab(i); }
+                    close-project()         => { root.close-project(); }
+                    project-tree-selected(id) => { root.project-tree-selected(id); }
+                    navigate-to(p)          => { root.navigate-to(p); }
+                    open-file(f)            => { root.open-file(f); }
                 }
             }
-
         }
     }
 
-    // ── Dismiss overlay (behind dropdowns) ───────────────────────────────────
+    // ── Dismiss overlay (behind dropdowns) ────────────────────────────────────
     if root.file-menu-open || root.view-menu-open || root.help-menu-open: Rectangle {
         z: 1;
         width: root.width;
@@ -1122,13 +245,8 @@ export component AppWindow inherits Window {
                         root.new-project();
                     }
                 }
-                Text {
-                    text: "New";
-                    color: white;
-                    height: parent.height;
-                    vertical-alignment: center;
-                    x: 8px;
-                }
+                Text { text: "New"; color: white; height: parent.height;
+                       vertical-alignment: center; x: 8px; }
             }
             Rectangle {
                 height: 30px;
@@ -1219,13 +337,8 @@ export component AppWindow inherits Window {
                         root.about-open = true;
                     }
                 }
-                Text {
-                    text: "About";
-                    color: white;
-                    height: parent.height;
-                    vertical-alignment: center;
-                    x: 8px;
-                }
+                Text { text: "About"; color: white; height: parent.height;
+                       vertical-alignment: center; x: 8px; }
             }
         }
     }
@@ -1273,12 +386,8 @@ export component AppWindow inherits Window {
                 err-ok-btn := TouchArea {
                     clicked => { root.error-message = ""; }
                 }
-                Text {
-                    text: "OK";
-                    color: white;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+                Text { text: "OK"; color: white;
+                       horizontal-alignment: center; vertical-alignment: center; }
             }
         }
     }
@@ -1308,7 +417,6 @@ export component AppWindow inherits Window {
         border-color: #444444;
         border-radius: 4px;
 
-        // absorb clicks so backdrop TouchArea doesn't fire
         TouchArea { width: parent.width; height: parent.height; }
 
         about-layout := VerticalLayout {
@@ -1327,12 +435,8 @@ export component AppWindow inherits Window {
                 ok-btn := TouchArea {
                     clicked => { root.about-open = false; }
                 }
-                Text {
-                    text: "OK";
-                    color: white;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+                Text { text: "OK"; color: white;
+                       horizontal-alignment: center; vertical-alignment: center; }
             }
         }
     }

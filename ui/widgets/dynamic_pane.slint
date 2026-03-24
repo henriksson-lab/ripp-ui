@@ -1,0 +1,59 @@
+import { LeftTabEntry } from "../types.slint";
+
+export component DynamicPane {
+    in-out property <[LeftTabEntry]> tabs;
+    in-out property <int> active-tab: 0;
+    out property <int> active-tab-type:
+        (root.active-tab < root.tabs.length) ? root.tabs[root.active-tab].tab-type : -1;
+    callback close-tab(int);
+
+    VerticalLayout {
+        // ── Dynamic tab bar ───────────────────────────────────────────────────
+        Rectangle {
+            height: 28px;
+            background: #222222;
+            HorizontalLayout {
+                spacing: 0px;
+                alignment: start;
+
+                for tab[i] in root.tabs: Rectangle {
+                    width: 94px;
+                    height: 28px;
+                    background: root.active-tab == i ? #3A3A3A : #222222;
+                    tab-btn := TouchArea { clicked => { root.active-tab = i; } }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 2px;
+                        spacing: 2px;
+                        Text {
+                            text: tab.label;
+                            color: white;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 3px;
+                            background: x-btn.has-hover ? #555555 : transparent;
+                            x-btn := TouchArea {
+                                clicked => { root.close-tab(i); }
+                            }
+                            Text {
+                                text: "×";
+                                color: #AAAAAA;
+                                font-size: 13px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Caller-supplied content ───────────────────────────────────────────
+        @children
+    }
+}
