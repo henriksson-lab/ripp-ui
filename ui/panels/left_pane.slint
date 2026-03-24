@@ -1,10 +1,12 @@
-import { Slider } from "std-widgets.slint";
 import { DynamicPane }   from "../widgets/dynamic_pane.slint";
-import { RangeSlider }   from "../widgets/range_slider.slint";
-import { LeftTabEntry, ProjectTreeEntry } from "../types.slint";
+import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
 
 export component LeftPane inherits Rectangle {
-    // Data from AppWindow
+    // Tab data
+    in-out property <[LeftTabEntry]> left-tabs;
+    in-out property <int>   active-left-tab: 0;
+
+    // All content data (forwarded to DynamicPane)
     in property <image> teapot-image;
     in property <image> camera-image;
     in property <image> viewer2d-image;
@@ -16,23 +18,15 @@ export component LeftPane inherits Rectangle {
     in-out property <bool>  live-snap: false;
     in-out property <float> camera-lo: 0.0;
     in-out property <float> camera-hi: 255.0;
-    in-out property <[LeftTabEntry]> left-tabs;
-    in-out property <int>   active-left-tab: 0;
     in property <[ProjectTreeEntry]> project-tree;
+    in property <[DevicePropEntry]>  device-props;
+    in property <[FileEntry]>        file-list;
+    in-out property <string>         current-path: ".";
+    in-out property <int>            selected-project-id: -1;
 
-    // Private UI state (2D viewer dropdown)
-    private property <float> cam-drag-x;
-    private property <float> cam-drag-y;
-    private property <float> v3d-drag-x;
-    private property <float> v3d-drag-y;
-    private property <float> v2d-drag-x;
-    private property <float> v2d-drag-y;
-    private property <bool>  viewer2d-dropdown-open: false;
-    private property <int>   viewer2d-selected-row: -1;
-    private property <string> viewer2d-selected-label: "";
-
-    // Callbacks forwarded to AppWindow
+    // Callbacks
     callback close-left-tab(int);
+    callback move-left-tab(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
     callback viewer2d-panned(float, float);
@@ -45,277 +39,51 @@ export component LeftPane inherits Rectangle {
     callback camera-panned(float, float);
     callback camera-scrolled(float);
     callback camera-settings-changed();
+    callback close-project();
+    callback project-tree-selected(int);
+    callback navigate-to(string);
+    callback open-file(string);
 
-    pane := DynamicPane {
+    DynamicPane {
         width: 100%; height: 100%;
         tabs        <=> root.left-tabs;
         active-tab  <=> root.active-left-tab;
-        close-tab(i) => { root.close-left-tab(i); }
+        current-area: 0;
 
-        // ── 3D View tab (type_id 0) ───────────────────────────────────────────
-        if pane.active-tab-type == 0: Rectangle {
-            vertical-stretch: 1;
-            Image {
-                source: root.teapot-image;
-                width: 100%; height: 100%;
-                image-fit: fill;
-            }
-            v3d-ta := TouchArea {
-                mouse-cursor: crosshair;
-                pointer-event(e) => {
-                    if (e.kind == PointerEventKind.down) {
-                        root.v3d-drag-x = self.mouse-x / 1px;
-                        root.v3d-drag-y = self.mouse-y / 1px;
-                    }
-                }
-                moved => {
-                    if (self.pressed) {
-                        root.viewer3d-panned(
-                            self.mouse-x / 1px - root.v3d-drag-x,
-                            self.mouse-y / 1px - root.v3d-drag-y
-                        );
-                        root.v3d-drag-x = self.mouse-x / 1px;
-                        root.v3d-drag-y = self.mouse-y / 1px;
-                    }
-                }
-                scroll-event(e) => {
-                    root.viewer3d-scrolled(e.delta-y / 1px);
-                    return EventResult.accept;
-                }
-            }
-        }
+        teapot-image             <=> root.teapot-image;
+        camera-image             <=> root.camera-image;
+        viewer2d-image           <=> root.viewer2d-image;
+        viewer2d-image-loaded    <=> root.viewer2d-image-loaded;
+        viewer2d-lo              <=> root.viewer2d-lo;
+        viewer2d-hi              <=> root.viewer2d-hi;
+        viewer2d-z               <=> root.viewer2d-z;
+        viewer2d-z-max           <=> root.viewer2d-z-max;
+        live-snap                <=> root.live-snap;
+        camera-lo                <=> root.camera-lo;
+        camera-hi                <=> root.camera-hi;
+        project-tree:               root.project-tree;
+        device-props:               root.device-props;
+        file-list:                  root.file-list;
+        current-path             <=> root.current-path;
+        selected-project-id      <=> root.selected-project-id;
 
-        // ── Camera tab (type_id 2) ────────────────────────────────────────────
-        if pane.active-tab-type == 2: VerticalLayout {
-            vertical-stretch: 1;
-
-            Rectangle {
-                vertical-stretch: 1;
-                Image {
-                    source: root.camera-image;
-                    image-fit: contain;
-                    width: 100%; height: 100%;
-                }
-                cam-ta := TouchArea {
-                    mouse-cursor: crosshair;
-                    pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) {
-                            root.cam-drag-x = self.mouse-x / 1px;
-                            root.cam-drag-y = self.mouse-y / 1px;
-                        }
-                    }
-                    moved => {
-                        if (self.pressed) {
-                            root.camera-panned(
-                                self.mouse-x / 1px - root.cam-drag-x,
-                                self.mouse-y / 1px - root.cam-drag-y
-                            );
-                            root.cam-drag-x = self.mouse-x / 1px;
-                            root.cam-drag-y = self.mouse-y / 1px;
-                        }
-                    }
-                    scroll-event(e) => {
-                        root.camera-scrolled(e.delta-y / 1px);
-                        return EventResult.accept;
-                    }
-                }
-            }
-
-            Rectangle {
-                height: 32px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding: 4px; spacing: 6px; alignment: start;
-
-                    Rectangle {
-                        width: 60px; height: 24px;
-                        background: snap-btn.has-hover ? #3D3D3D : #2A2A2A;
-                        border-radius: 3px;
-                        snap-btn := TouchArea { clicked => { root.snap-requested(); } }
-                        Text { text: "Snap"; color: white; font-size: 12px;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-
-                    Rectangle {
-                        width: 60px; height: 24px;
-                        background: live-btn.has-hover ? #3D3D3D : #2A2A2A;
-                        border-radius: 3px;
-                        border-width: root.live-snap ? 1px : 0px;
-                        border-color: #6699CC;
-                        live-btn := TouchArea {
-                            clicked => {
-                                root.live-snap = !root.live-snap;
-                                root.live-toggled(root.live-snap);
-                            }
-                        }
-                        Text { text: "Live"; font-size: 12px;
-                               color: root.live-snap ? #9ABFDD : white;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-            }
-
-            Rectangle {
-                height: 28px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding-left: 6px; padding-right: 6px;
-                    padding-top: 4px;  padding-bottom: 4px;
-                    RangeSlider {
-                        horizontal-stretch: 1;
-                        minimum: 0.0; maximum: 255.0;
-                        lo <=> root.camera-lo;
-                        hi <=> root.camera-hi;
-                        changed(l, h) => { root.camera-settings-changed(); }
-                    }
-                }
-            }
-        }
-
-        // ── 2D Viewer tab (type_id 1) ─────────────────────────────────────────
-        if pane.active-tab-type == 1: VerticalLayout {
-            vertical-stretch: 1;
-
-            HorizontalLayout {
-                vertical-stretch: 1;
-
-                Rectangle {
-                    horizontal-stretch: 1;
-                    background: #111111;
-                    if root.viewer2d-image-loaded: Image {
-                        source: root.viewer2d-image;
-                        image-fit: fill;
-                        width: 100%; height: 100%;
-                    }
-                    if !root.viewer2d-image-loaded: Text {
-                        text: "No image selected";
-                        color: #555555; font-size: 14px;
-                        horizontal-alignment: center; vertical-alignment: center;
-                    }
-                    v2d-ta := TouchArea {
-                        mouse-cursor: crosshair;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.v2d-drag-x = self.mouse-x / 1px;
-                                root.v2d-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        moved => {
-                            if (self.pressed) {
-                                root.viewer2d-panned(
-                                    self.mouse-x / 1px - root.v2d-drag-x,
-                                    self.mouse-y / 1px - root.v2d-drag-y
-                                );
-                                root.v2d-drag-x = self.mouse-x / 1px;
-                                root.v2d-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        scroll-event(e) => {
-                            root.viewer2d-scrolled(e.delta-y / 1px);
-                            return EventResult.accept;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: 20px;
-                    background: #111111;
-                    Slider {
-                        width: 20px; height: parent.height;
-                        orientation: vertical;
-                        minimum: 0; maximum: root.viewer2d-z-max;
-                        value <=> root.viewer2d-z;
-                        enabled: root.viewer2d-z-max > 0;
-                        changed(v) => { root.viewer2d-z-changed(v); }
-                    }
-                }
-            }
-
-            Rectangle {
-                height: 28px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding-left: 6px; padding-right: 6px;
-                    padding-top: 4px;  padding-bottom: 4px;
-                    RangeSlider {
-                        horizontal-stretch: 1;
-                        minimum: 0.0; maximum: 255.0;
-                        lo <=> root.viewer2d-lo;
-                        hi <=> root.viewer2d-hi;
-                        changed(l, h) => { root.viewer2d-settings-changed(); }
-                    }
-                }
-            }
-
-            // Inline dropdown list
-            if root.viewer2d-dropdown-open: Rectangle {
-                height: min(200px, dd-entries.preferred-height);
-                background: #1E1E1E;
-                border-width: 1px;
-                border-color: #444444;
-                clip: true;
-
-                dd-flick := Flickable {
-                    width: parent.width; height: parent.height;
-                    viewport-height: dd-entries.preferred-height;
-
-                    dd-entries := VerticalLayout {
-                        for entry[i] in root.project-tree: Rectangle {
-                            height: 22px;
-                            background: dd-row-ta.has-hover ? #2A3A4A
-                                      : root.viewer2d-selected-row == i ? #1E3A5F : #1E1E1E;
-                            dd-row-ta := TouchArea {
-                                clicked => {
-                                    root.viewer2d-selected-row = i;
-                                    root.viewer2d-selected-label = entry.label;
-                                    root.viewer2d-dropdown-open = false;
-                                    root.viewer2d-object-selected(entry.project-id, entry.object-id);
-                                }
-                            }
-                            HorizontalLayout {
-                                padding-left: 8px + entry.indent * 16px;
-                                padding-right: 4px;
-                                Text {
-                                    text: entry.label;
-                                    color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Selector bar
-            Rectangle {
-                height: 32px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding: 4px;
-                    Rectangle {
-                        horizontal-stretch: 1; height: 24px;
-                        background: dd-btn.has-hover ? #3A3A3A : #2A2A2A;
-                        border-radius: 3px;
-                        dd-btn := TouchArea {
-                            clicked => { root.viewer2d-dropdown-open = !root.viewer2d-dropdown-open; }
-                        }
-                        HorizontalLayout {
-                            padding-left: 8px; padding-right: 8px;
-                            Text {
-                                text: root.viewer2d-selected-label == "" ? "Select object..." : root.viewer2d-selected-label;
-                                color: root.viewer2d-selected-label == "" ? #666666 : #CCCCCC;
-                                font-size: 12px;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                                overflow: elide;
-                            }
-                            Text { text: "▼"; color: #888888; font-size: 10px; vertical-alignment: center; }
-                        }
-                    }
-                }
-            }
-        }
+        close-tab(i)                   => { root.close-left-tab(i); }
+        move-tab(i, t)                 => { root.move-left-tab(i, t); }
+        viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
+        viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
+        viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
+        viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
+        viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
+        viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
+        viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
+        snap-requested()               => { root.snap-requested(); }
+        live-toggled(v)                => { root.live-toggled(v); }
+        camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }
+        camera-scrolled(d)             => { root.camera-scrolled(d); }
+        camera-settings-changed()      => { root.camera-settings-changed(); }
+        close-project()                => { root.close-project(); }
+        project-tree-selected(id)      => { root.project-tree-selected(id); }
+        navigate-to(p)                 => { root.navigate-to(p); }
+        open-file(f)                   => { root.open-file(f); }
     }
 }

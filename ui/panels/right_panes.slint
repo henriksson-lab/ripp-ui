@@ -1,357 +1,174 @@
 import { DynamicPane }   from "../widgets/dynamic_pane.slint";
 import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
 
-// ── Right-top pane: Cam prop / Part. tracking ─────────────────────────────────
+// ── Right-top pane ─────────────────────────────────────────────────────────────
 
 export component RightTopPane inherits Rectangle {
-    in property <[DevicePropEntry]> device-props;
     in-out property <[LeftTabEntry]> tabs;
     in-out property <int> active-tab: 0;
-    callback close-tab(int);
 
-    // Private column-resize state
-    private property <length> dp-col1-width: 100px;
-    private property <length> dp-col3-width: 120px;
-    private property <length> dp-drag1: 0;
-    private property <length> dp-drag3: 0;
-
-    pane := DynamicPane {
-        width: 100%; height: 100%;
-        tabs        <=> root.tabs;
-        active-tab  <=> root.active-tab;
-        close-tab(i) => { root.close-tab(i); }
-
-        // ── Cam prop content (type_id 3) ──────────────────────────────────────
-        if pane.active-tab-type == 3: VerticalLayout {
-            vertical-stretch: 1;
-
-            // Column header
-            Rectangle {
-                height: 20px;
-                background: #000000;
-                HorizontalLayout {
-                    padding-left: 4px;
-                    padding-right: 4px;
-                    Text { text: "Device";   color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
-                    Rectangle {
-                        width: 5px; height: parent.height;
-                        background: dph1.pressed ? #666666 : (dph1.has-hover ? #444444 : transparent);
-                        dph1 := TouchArea {
-                            mouse-cursor: col-resize;
-                            pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag1 = self.mouse-x; } }
-                            moved => { root.dp-col1-width = max(40px, root.dp-col1-width + self.mouse-x - root.dp-drag1); }
-                        }
-                    }
-                    Text { text: "Property"; color: #888888; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                    Rectangle {
-                        width: 5px; height: parent.height;
-                        background: dph3.pressed ? #666666 : (dph3.has-hover ? #444444 : transparent);
-                        dph3 := TouchArea {
-                            mouse-cursor: col-resize;
-                            pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-drag3 = self.mouse-x; } }
-                            moved => { root.dp-col3-width = max(40px, root.dp-col3-width - (self.mouse-x - root.dp-drag3)); }
-                        }
-                    }
-                    Text { text: "Value";    color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
-                }
-            }
-            Rectangle { height: 1px; background: #2A2A2A; }
-
-            Rectangle {
-                vertical-stretch: 1;
-                background: #000000;
-                clip: true;
-
-                prop-flick := Flickable {
-                    width: parent.width - 8px;
-                    height: parent.height;
-                    viewport-height: prop-entries.preferred-height;
-
-                    prop-entries := VerticalLayout {
-                        for entry in root.device-props: Rectangle {
-                            height: 22px;
-                            background: prop-row.has-hover ? #1E1E1E : #000000;
-                            prop-row := TouchArea {}
-                            HorizontalLayout {
-                                padding-left: 4px;
-                                padding-right: 4px;
-                                spacing: 0px;
-                                Text { text: entry.device;   color: #6699CC; font-size: 12px; vertical-alignment: center; width: root.dp-col1-width; overflow: elide; }
-                                Rectangle { width: 5px; }
-                                Text { text: entry.property; color: #CCCCCC; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                                Rectangle { width: 5px; }
-                                Text { text: entry.value;    color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: root.dp-col3-width; overflow: elide; }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    x: parent.width - 6px;
-                    width: 6px;
-                    height: parent.height;
-                    background: #111111;
-                    Rectangle {
-                        visible: prop-flick.viewport-height > prop-flick.height;
-                        width: 4px; x: 1px;
-                        y: (-prop-flick.viewport-y / prop-flick.viewport-height) * parent.height;
-                        height: max(20px, (prop-flick.height / prop-flick.viewport-height) * parent.height);
-                        background: #555555;
-                        border-radius: 2px;
-                    }
-                }
-            }
-        }
-
-        // ── Part. tracking placeholder (type_id 4) ────────────────────────────
-        if pane.active-tab-type == 4: VerticalLayout {
-            vertical-stretch: 1;
-            alignment: center;
-            Text { text: "Particle tracking"; color: #555555; font-size: 13px; horizontal-alignment: center; }
-        }
-    }
-}
-
-// ── Right-bottom pane: Project / Files / Plots / Help ─────────────────────────
-
-export component RightBottomPane inherits Rectangle {
+    in property <image> teapot-image;
+    in property <image> camera-image;
+    in property <image> viewer2d-image;
+    in-out property <bool>  viewer2d-image-loaded: false;
+    in-out property <float> viewer2d-lo: 0.0;
+    in-out property <float> viewer2d-hi: 255.0;
+    in-out property <float> viewer2d-z: 0;
+    in-out property <float> viewer2d-z-max: 0;
+    in-out property <bool>  live-snap: false;
+    in-out property <float> camera-lo: 0.0;
+    in-out property <float> camera-hi: 255.0;
     in property <[ProjectTreeEntry]> project-tree;
-    in property <[FileEntry]> file-list;
-    in-out property <string> current-path: ".";
-    in-out property <int> active-tab: 0;
-    in-out property <int> selected-project-id: -1;
-    in-out property <[LeftTabEntry]> tabs;
+    in property <[DevicePropEntry]>  device-props;
+    in property <[FileEntry]>        file-list;
+    in-out property <string>         current-path: ".";
+    in-out property <int>            selected-project-id: -1;
+
     callback close-tab(int);
+    callback move-tab(int, int);
+    callback viewer3d-panned(float, float);
+    callback viewer3d-scrolled(float);
+    callback viewer2d-panned(float, float);
+    callback viewer2d-scrolled(float);
+    callback viewer2d-settings-changed();
+    callback viewer2d-z-changed(float);
+    callback viewer2d-object-selected(int, int);
+    callback snap-requested();
+    callback live-toggled(bool);
+    callback camera-panned(float, float);
+    callback camera-scrolled(float);
+    callback camera-settings-changed();
     callback close-project();
     callback project-tree-selected(int);
     callback navigate-to(string);
     callback open-file(string);
 
-    // Private state
-    private property <int>    selected-row: -1;
-    private property <length> file-size-width: 72px;
-    private property <length> file-drag: 0;
-    private property <int>    selected-file-row: -1;
-    private property <bool>   selected-file-is-dir: false;
-
-    pane := DynamicPane {
+    DynamicPane {
         width: 100%; height: 100%;
         tabs        <=> root.tabs;
         active-tab  <=> root.active-tab;
-        close-tab(i) => { root.close-tab(i); }
+        current-area: 1;
 
-        // ── Project tab (type_id 5) ───────────────────────────────────────────
-        if pane.active-tab-type == 5: VerticalLayout {
-            vertical-stretch: 1;
+        teapot-image             <=> root.teapot-image;
+        camera-image             <=> root.camera-image;
+        viewer2d-image           <=> root.viewer2d-image;
+        viewer2d-image-loaded    <=> root.viewer2d-image-loaded;
+        viewer2d-lo              <=> root.viewer2d-lo;
+        viewer2d-hi              <=> root.viewer2d-hi;
+        viewer2d-z               <=> root.viewer2d-z;
+        viewer2d-z-max           <=> root.viewer2d-z-max;
+        live-snap                <=> root.live-snap;
+        camera-lo                <=> root.camera-lo;
+        camera-hi                <=> root.camera-hi;
+        project-tree:               root.project-tree;
+        device-props:               root.device-props;
+        file-list:                  root.file-list;
+        current-path             <=> root.current-path;
+        selected-project-id      <=> root.selected-project-id;
 
-            Rectangle {
-                vertical-stretch: 1;
-                background: #000000;
-                clip: true;
+        close-tab(i)                   => { root.close-tab(i); }
+        move-tab(i, t)                 => { root.move-tab(i, t); }
+        viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
+        viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
+        viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
+        viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
+        viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
+        viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
+        viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
+        snap-requested()               => { root.snap-requested(); }
+        live-toggled(v)                => { root.live-toggled(v); }
+        camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }
+        camera-scrolled(d)             => { root.camera-scrolled(d); }
+        camera-settings-changed()      => { root.camera-settings-changed(); }
+        close-project()                => { root.close-project(); }
+        project-tree-selected(id)      => { root.project-tree-selected(id); }
+        navigate-to(p)                 => { root.navigate-to(p); }
+        open-file(f)                   => { root.open-file(f); }
+    }
+}
 
-                proj-flick := Flickable {
-                    width: parent.width - 8px;
-                    height: parent.height;
-                    viewport-height: proj-entries.preferred-height;
+// ── Right-bottom pane ──────────────────────────────────────────────────────────
 
-                    proj-entries := VerticalLayout {
-                        for entry[i] in root.project-tree: Rectangle {
-                            height: 22px;
-                            background: root.selected-row == i ? #1E3A5F : #000000;
-                            row-ta := TouchArea {
-                                clicked => {
-                                    root.selected-row = i;
-                                    root.project-tree-selected(entry.object-id);
-                                    if (entry.indent == 0) {
-                                        root.selected-project-id = entry.object-id;
-                                    }
-                                }
-                            }
-                            HorizontalLayout {
-                                padding-left: 8px + entry.indent * 16px;
-                                padding-right: 4px;
-                                Text {
-                                    text: entry.label;
-                                    color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                    font-size: 13px;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                }
-                            }
-                        }
-                    }
-                }
+export component RightBottomPane inherits Rectangle {
+    in-out property <[LeftTabEntry]> tabs;
+    in-out property <int> active-tab: 0;
 
-                Rectangle {
-                    x: parent.width - 6px; width: 6px; height: parent.height;
-                    background: #111111;
-                    Rectangle {
-                        visible: proj-flick.viewport-height > proj-flick.height;
-                        width: 4px; x: 1px;
-                        y: (-proj-flick.viewport-y / proj-flick.viewport-height) * parent.height;
-                        height: max(20px, (proj-flick.height / proj-flick.viewport-height) * parent.height);
-                        background: #555555; border-radius: 2px;
-                    }
-                }
-            }
+    in property <image> teapot-image;
+    in property <image> camera-image;
+    in property <image> viewer2d-image;
+    in-out property <bool>  viewer2d-image-loaded: false;
+    in-out property <float> viewer2d-lo: 0.0;
+    in-out property <float> viewer2d-hi: 255.0;
+    in-out property <float> viewer2d-z: 0;
+    in-out property <float> viewer2d-z-max: 0;
+    in-out property <bool>  live-snap: false;
+    in-out property <float> camera-lo: 0.0;
+    in-out property <float> camera-hi: 255.0;
+    in property <[ProjectTreeEntry]> project-tree;
+    in property <[DevicePropEntry]>  device-props;
+    in property <[FileEntry]>        file-list;
+    in-out property <string>         current-path: ".";
+    in-out property <int>            selected-project-id: -1;
 
-            Rectangle {
-                height: 32px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding: 4px; spacing: 6px; alignment: start;
-                    Rectangle {
-                        width: 60px; height: 24px;
-                        background: close-proj-btn.has-hover ? #3D3D3D : #2A2A2A;
-                        border-radius: 3px;
-                        close-proj-btn := TouchArea { clicked => { root.close-project(); } }
-                        Text { text: "Close"; color: white; font-size: 12px;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-            }
-        }
+    callback close-tab(int);
+    callback move-tab(int, int);
+    callback viewer3d-panned(float, float);
+    callback viewer3d-scrolled(float);
+    callback viewer2d-panned(float, float);
+    callback viewer2d-scrolled(float);
+    callback viewer2d-settings-changed();
+    callback viewer2d-z-changed(float);
+    callback viewer2d-object-selected(int, int);
+    callback snap-requested();
+    callback live-toggled(bool);
+    callback camera-panned(float, float);
+    callback camera-scrolled(float);
+    callback camera-settings-changed();
+    callback close-project();
+    callback project-tree-selected(int);
+    callback navigate-to(string);
+    callback open-file(string);
 
-        // ── Files tab (type_id 6) ─────────────────────────────────────────────
-        if pane.active-tab-type == 6: VerticalLayout {
-            vertical-stretch: 1;
+    DynamicPane {
+        width: 100%; height: 100%;
+        tabs        <=> root.tabs;
+        active-tab  <=> root.active-tab;
+        current-area: 2;
 
-            Rectangle {
-                height: 26px;
-                background: #1E1E1E;
-                HorizontalLayout {
-                    padding-left: 4px; padding-right: 4px; spacing: 4px;
-                    Rectangle {
-                        width: 28px;
-                        background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
-                        border-radius: 3px;
-                        up-btn := TouchArea { clicked => { root.navigate-to(".."); } }
-                        Text { text: "↑"; color: #AAAAAA;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                    Text {
-                        text: root.current-path; color: #AAAAAA; font-size: 12px;
-                        vertical-alignment: center; overflow: elide; horizontal-stretch: 1;
-                    }
-                }
-            }
+        teapot-image             <=> root.teapot-image;
+        camera-image             <=> root.camera-image;
+        viewer2d-image           <=> root.viewer2d-image;
+        viewer2d-image-loaded    <=> root.viewer2d-image-loaded;
+        viewer2d-lo              <=> root.viewer2d-lo;
+        viewer2d-hi              <=> root.viewer2d-hi;
+        viewer2d-z               <=> root.viewer2d-z;
+        viewer2d-z-max           <=> root.viewer2d-z-max;
+        live-snap                <=> root.live-snap;
+        camera-lo                <=> root.camera-lo;
+        camera-hi                <=> root.camera-hi;
+        project-tree:               root.project-tree;
+        device-props:               root.device-props;
+        file-list:                  root.file-list;
+        current-path             <=> root.current-path;
+        selected-project-id      <=> root.selected-project-id;
 
-            Rectangle { height: 1px; background: #333333; }
-
-            Rectangle {
-                height: 20px;
-                background: #000000;
-                HorizontalLayout {
-                    padding-left: 24px; padding-right: 4px;
-                    Text { text: "Name"; color: #888888; font-size: 11px;
-                           vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                    Rectangle {
-                        width: 5px; height: parent.height;
-                        background: fh.pressed ? #666666 : (fh.has-hover ? #444444 : transparent);
-                        fh := TouchArea {
-                            mouse-cursor: col-resize;
-                            pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.file-drag = self.mouse-x; } }
-                            moved => { root.file-size-width = max(40px, root.file-size-width - (self.mouse-x - root.file-drag)); }
-                        }
-                    }
-                    Text { text: "Size"; color: #888888; font-size: 11px;
-                           vertical-alignment: center; width: root.file-size-width; horizontal-alignment: right; }
-                }
-            }
-            Rectangle { height: 1px; background: #2A2A2A; }
-
-            Rectangle {
-                vertical-stretch: 1;
-                background: #000000;
-                clip: true;
-
-                file-flick := Flickable {
-                    width: parent.width - 8px;
-                    height: parent.height;
-                    viewport-height: file-entries.preferred-height;
-
-                    file-entries := VerticalLayout {
-                        for entry[i] in root.file-list: Rectangle {
-                            height: 22px;
-                            background: root.selected-file-row == i ? #1E3A5F
-                                      : entry-area.has-hover ? #1E1E1E : #000000;
-                            entry-area := TouchArea {
-                                clicked => {
-                                    root.selected-file-row = i;
-                                    root.selected-file-is-dir = entry.is-dir;
-                                    if (entry.is-dir) {
-                                        root.selected-file-row = -1;
-                                        root.selected-file-is-dir = false;
-                                        root.navigate-to(entry.name);
-                                    }
-                                }
-                                double-clicked => {
-                                    if (!entry.is-dir) { root.open-file(entry.name); }
-                                }
-                            }
-                            HorizontalLayout {
-                                padding-left: 8px; padding-right: 4px; spacing: 4px;
-                                Text { text: entry.is-dir ? "▶" : " "; color: #6699CC;
-                                       font-size: 11px; vertical-alignment: center; width: 12px; }
-                                Text { text: entry.name;
-                                       color: entry.is-dir ? #9ABFDD : #CCCCCC;
-                                       font-size: 13px; vertical-alignment: center;
-                                       horizontal-stretch: 1; overflow: elide; }
-                                Text { text: entry.size; color: #777777; font-size: 12px;
-                                       vertical-alignment: center; width: root.file-size-width;
-                                       horizontal-alignment: right; }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    x: parent.width - 6px; width: 6px; height: parent.height;
-                    background: #111111;
-                    Rectangle {
-                        visible: file-flick.viewport-height > file-flick.height;
-                        width: 4px; x: 1px;
-                        y: (-file-flick.viewport-y / file-flick.viewport-height) * parent.height;
-                        height: max(20px, (file-flick.height / file-flick.viewport-height) * parent.height);
-                        background: #555555; border-radius: 2px;
-                    }
-                }
-            }
-
-            Rectangle {
-                height: 32px;
-                background: #1A1A1A;
-                HorizontalLayout {
-                    padding: 4px; spacing: 6px; alignment: start;
-                    Rectangle {
-                        width: 60px; height: 24px;
-                        opacity: root.selected-file-row >= 0 && !root.selected-file-is-dir ? 1.0 : 0.4;
-                        background: open-btn.has-hover && root.selected-file-row >= 0 && !root.selected-file-is-dir ? #3D3D3D : #2A2A2A;
-                        border-radius: 3px;
-                        open-btn := TouchArea {
-                            clicked => {
-                                if (root.selected-file-row >= 0 && !root.selected-file-is-dir) {
-                                    root.open-file(root.file-list[root.selected-file-row].name);
-                                }
-                            }
-                        }
-                        Text { text: "Open"; color: white; font-size: 12px;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-            }
-        }
-
-        // ── Plots placeholder (type_id 7) ─────────────────────────────────────
-        if pane.active-tab-type == 7: Rectangle {
-            vertical-stretch: 1;
-            background: #111111;
-        }
-
-        // ── Help placeholder (type_id 8) ──────────────────────────────────────
-        if pane.active-tab-type == 8: Rectangle {
-            vertical-stretch: 1;
-            background: #111111;
-        }
+        close-tab(i)                   => { root.close-tab(i); }
+        move-tab(i, t)                 => { root.move-tab(i, t); }
+        viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
+        viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
+        viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
+        viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
+        viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
+        viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
+        viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
+        snap-requested()               => { root.snap-requested(); }
+        live-toggled(v)                => { root.live-toggled(v); }
+        camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }
+        camera-scrolled(d)             => { root.camera-scrolled(d); }
+        camera-settings-changed()      => { root.camera-settings-changed(); }
+        close-project()                => { root.close-project(); }
+        project-tree-selected(id)      => { root.project-tree-selected(id); }
+        navigate-to(p)                 => { root.navigate-to(p); }
+        open-file(f)                   => { root.open-file(f); }
     }
 }

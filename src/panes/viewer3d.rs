@@ -3,11 +3,12 @@ use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use std::sync::{Arc, atomic::AtomicBool};
-use crate::session::{RippSession, RippTab, Tab3d, TabPane, ActivationContext};
+use crate::session::{RippSession, RippTab, Tab3d, TabPane, ActivationContext, PaneLocation};
 
 impl TabPane for Tab3d {
-    fn label(&self)   -> &str { "3D View" }
-    fn type_id(&self) -> i32  { 0 }
+    fn label(&self)            -> &str         { "3D View" }
+    fn type_id(&self)          -> i32          { 0 }
+    fn default_location(&self) -> PaneLocation { PaneLocation::Left }
     fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
     fn on_activated(&self, _: &AppWindow, _: &ActivationContext) {}
 }

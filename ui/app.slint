@@ -59,6 +59,9 @@ export component AppWindow inherits Window {
     callback right-top-tab-activated(int);
     callback close-right-bottom-tab(int);
     callback right-bottom-tab-activated(int);
+    callback move-left-tab(int, int);
+    callback move-right-top-tab(int, int);
+    callback move-right-bottom-tab(int, int);
     callback viewer2d-object-selected(int, int);
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
@@ -146,33 +149,42 @@ export component AppWindow inherits Window {
             // Left pane
             LeftPane {
                 horizontal-stretch: 1;
-                teapot-image:            root.teapot-image;
-                camera-image:            root.camera-image;
-                viewer2d-image:          root.viewer2d-image;
-                viewer2d-image-loaded <=> root.viewer2d-image-loaded;
-                viewer2d-lo           <=> root.viewer2d-lo;
-                viewer2d-hi           <=> root.viewer2d-hi;
-                viewer2d-z            <=> root.viewer2d-z;
-                viewer2d-z-max        <=> root.viewer2d-z-max;
-                live-snap             <=> root.live-snap;
-                camera-lo             <=> root.camera-lo;
-                camera-hi             <=> root.camera-hi;
-                left-tabs             <=> root.left-tabs;
-                active-left-tab       <=> root.active-left-tab;
-                project-tree:            root.project-tree;
-                close-left-tab(i)        => { root.close-left-tab(i); }
-                viewer3d-panned(dx, dy)  => { root.viewer3d-panned(dx, dy); }
-                viewer3d-scrolled(d)     => { root.viewer3d-scrolled(d); }
-                viewer2d-panned(dx, dy)  => { root.viewer2d-panned(dx, dy); }
-                viewer2d-scrolled(d)     => { root.viewer2d-scrolled(d); }
-                viewer2d-settings-changed()        => { root.viewer2d-settings-changed(); }
-                viewer2d-z-changed(v)              => { root.viewer2d-z-changed(v); }
-                viewer2d-object-selected(pid, oid) => { root.viewer2d-object-selected(pid, oid); }
-                snap-requested()         => { root.snap-requested(); }
-                live-toggled(v)          => { root.live-toggled(v); }
-                camera-panned(dx, dy)    => { root.camera-panned(dx, dy); }
-                camera-scrolled(d)       => { root.camera-scrolled(d); }
-                camera-settings-changed() => { root.camera-settings-changed(); }
+                teapot-image:              root.teapot-image;
+                camera-image:              root.camera-image;
+                viewer2d-image:            root.viewer2d-image;
+                viewer2d-image-loaded   <=> root.viewer2d-image-loaded;
+                viewer2d-lo             <=> root.viewer2d-lo;
+                viewer2d-hi             <=> root.viewer2d-hi;
+                viewer2d-z              <=> root.viewer2d-z;
+                viewer2d-z-max          <=> root.viewer2d-z-max;
+                live-snap               <=> root.live-snap;
+                camera-lo               <=> root.camera-lo;
+                camera-hi               <=> root.camera-hi;
+                left-tabs               <=> root.left-tabs;
+                active-left-tab         <=> root.active-left-tab;
+                project-tree:              root.project-tree;
+                device-props:              root.device-props;
+                file-list:                 root.file-list;
+                current-path:              root.current-path;
+                selected-project-id     <=> root.selected-project-id;
+                close-left-tab(i)          => { root.close-left-tab(i); }
+                move-left-tab(i, t)        => { root.move-left-tab(i, t); }
+                viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
+                viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
+                viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
+                viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
+                viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
+                viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                snap-requested()           => { root.snap-requested(); }
+                live-toggled(v)            => { root.live-toggled(v); }
+                camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }
+                camera-scrolled(d)         => { root.camera-scrolled(d); }
+                camera-settings-changed()  => { root.camera-settings-changed(); }
+                close-project()            => { root.close-project(); }
+                project-tree-selected(id)  => { root.project-tree-selected(id); }
+                navigate-to(p)             => { root.navigate-to(p); }
+                open-file(f)               => { root.open-file(f); }
             }
 
             // Right pane
@@ -181,27 +193,84 @@ export component AppWindow inherits Window {
 
                 RightTopPane {
                     vertical-stretch: 1;
-                    device-props:   root.device-props;
-                    tabs        <=> root.right-top-tabs;
-                    active-tab  <=> root.active-right-top-tab;
-                    close-tab(i) => { root.close-right-top-tab(i); }
+                    teapot-image:              root.teapot-image;
+                    camera-image:              root.camera-image;
+                    viewer2d-image:            root.viewer2d-image;
+                    viewer2d-image-loaded   <=> root.viewer2d-image-loaded;
+                    viewer2d-lo             <=> root.viewer2d-lo;
+                    viewer2d-hi             <=> root.viewer2d-hi;
+                    viewer2d-z              <=> root.viewer2d-z;
+                    viewer2d-z-max          <=> root.viewer2d-z-max;
+                    live-snap               <=> root.live-snap;
+                    camera-lo               <=> root.camera-lo;
+                    camera-hi               <=> root.camera-hi;
+                    tabs                    <=> root.right-top-tabs;
+                    active-tab              <=> root.active-right-top-tab;
+                    project-tree:              root.project-tree;
+                    device-props:              root.device-props;
+                    file-list:                 root.file-list;
+                    current-path:              root.current-path;
+                    selected-project-id     <=> root.selected-project-id;
+                    close-tab(i)               => { root.close-right-top-tab(i); }
+                    move-tab(i, t)             => { root.move-right-top-tab(i, t); }
+                    viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
+                    viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                    viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
+                    viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
+                    viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
+                    viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
+                    viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                    snap-requested()           => { root.snap-requested(); }
+                    live-toggled(v)            => { root.live-toggled(v); }
+                    camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }
+                    camera-scrolled(d)         => { root.camera-scrolled(d); }
+                    camera-settings-changed()  => { root.camera-settings-changed(); }
+                    close-project()            => { root.close-project(); }
+                    project-tree-selected(id)  => { root.project-tree-selected(id); }
+                    navigate-to(p)             => { root.navigate-to(p); }
+                    open-file(f)               => { root.open-file(f); }
                 }
 
                 Rectangle { height: 1px; background: #444444; }
 
                 RightBottomPane {
                     vertical-stretch: 1;
-                    project-tree:            root.project-tree;
-                    file-list:               root.file-list;
-                    current-path:            root.current-path;
-                    tabs                <=> root.right-bottom-tabs;
-                    active-tab          <=> root.active-right-bottom-tab;
-                    selected-project-id <=> root.selected-project-id;
-                    close-tab(i)            => { root.close-right-bottom-tab(i); }
-                    close-project()         => { root.close-project(); }
-                    project-tree-selected(id) => { root.project-tree-selected(id); }
-                    navigate-to(p)          => { root.navigate-to(p); }
-                    open-file(f)            => { root.open-file(f); }
+                    teapot-image:              root.teapot-image;
+                    camera-image:              root.camera-image;
+                    viewer2d-image:            root.viewer2d-image;
+                    viewer2d-image-loaded   <=> root.viewer2d-image-loaded;
+                    viewer2d-lo             <=> root.viewer2d-lo;
+                    viewer2d-hi             <=> root.viewer2d-hi;
+                    viewer2d-z              <=> root.viewer2d-z;
+                    viewer2d-z-max          <=> root.viewer2d-z-max;
+                    live-snap               <=> root.live-snap;
+                    camera-lo               <=> root.camera-lo;
+                    camera-hi               <=> root.camera-hi;
+                    tabs                    <=> root.right-bottom-tabs;
+                    active-tab              <=> root.active-right-bottom-tab;
+                    project-tree:              root.project-tree;
+                    device-props:              root.device-props;
+                    file-list:                 root.file-list;
+                    current-path:              root.current-path;
+                    selected-project-id     <=> root.selected-project-id;
+                    close-tab(i)               => { root.close-right-bottom-tab(i); }
+                    move-tab(i, t)             => { root.move-right-bottom-tab(i, t); }
+                    viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
+                    viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                    viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
+                    viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
+                    viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
+                    viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
+                    viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                    snap-requested()           => { root.snap-requested(); }
+                    live-toggled(v)            => { root.live-toggled(v); }
+                    camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }
+                    camera-scrolled(d)         => { root.camera-scrolled(d); }
+                    camera-settings-changed()  => { root.camera-settings-changed(); }
+                    close-project()            => { root.close-project(); }
+                    project-tree-selected(id)  => { root.project-tree-selected(id); }
+                    navigate-to(p)             => { root.navigate-to(p); }
+                    open-file(f)               => { root.open-file(f); }
                 }
             }
         }

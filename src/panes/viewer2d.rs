@@ -3,7 +3,7 @@ use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use std::sync::{Arc, atomic::AtomicBool};
-use crate::session::{RippSession, RippTab, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, ActivationContext, find_object_ref, find_object_mut};
+use crate::session::{RippSession, RippTab, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, ActivationContext, PaneLocation, find_object_ref, find_object_mut};
 use crate::renderer2d::Viewer2dRenderer;
 
 // ── GPU helpers ───────────────────────────────────────────────────────────────
@@ -64,8 +64,9 @@ pub fn render(
 }
 
 impl TabPane for Tab2d {
-    fn label(&self)   -> &str { "2D Viewer" }
-    fn type_id(&self) -> i32  { 1 }
+    fn label(&self)            -> &str         { "2D Viewer" }
+    fn type_id(&self)          -> i32          { 1 }
+    fn default_location(&self) -> PaneLocation { PaneLocation::Left }
     fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
         ui.set_viewer2d_lo(self.color.lo);

@@ -3,12 +3,13 @@ use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicBool};
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, TabProject, TabPane, ActivationContext};
+use crate::session::{RippSession, TabProject, TabPane, ActivationContext, PaneLocation};
 use crate::app_logic::{build_tree, build_tabs};
 
 impl TabPane for TabProject {
-    fn label(&self)   -> &str { "Project" }
-    fn type_id(&self) -> i32  { 5 }
+    fn label(&self)            -> &str         { "Project" }
+    fn type_id(&self)          -> i32          { 5 }
+    fn default_location(&self) -> PaneLocation { PaneLocation::RightBottom }
     fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
     fn on_activated(&self, _: &AppWindow, _: &ActivationContext) {}
 }

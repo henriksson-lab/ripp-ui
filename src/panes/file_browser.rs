@@ -4,12 +4,13 @@ use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicBool};
 use slint::ComponentHandle;
 use crate::{AppWindow, FileEntry};
-use crate::session::{RippSession, TabFileBrowser, TabPane, ActivationContext, BioformatsData, ProjectData};
+use crate::session::{RippSession, TabFileBrowser, TabPane, ActivationContext, PaneLocation, BioformatsData, ProjectData};
 use crate::app_logic::build_tree;
 
 impl TabPane for TabFileBrowser {
-    fn label(&self)   -> &str { "Files" }
-    fn type_id(&self) -> i32  { 6 }
+    fn label(&self)            -> &str         { "Files" }
+    fn type_id(&self)          -> i32          { 6 }
+    fn default_location(&self) -> PaneLocation { PaneLocation::RightBottom }
     fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
     fn on_activated(&self, _: &AppWindow, _: &ActivationContext) {}
 }

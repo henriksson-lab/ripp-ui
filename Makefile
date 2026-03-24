@@ -1,3 +1,6 @@
+all:
+	cargo run 
+
 local:
 	cargo run --release 
 

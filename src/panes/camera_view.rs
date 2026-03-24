@@ -4,12 +4,13 @@ use std::sync::{Arc, Mutex};
 use slint::ComponentHandle;
 use crate::{AppWindow, DevicePropEntry};
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::session::{RippSession, RippTab, TabCamera, ColorMappingRange, TabPane, ActivationContext};
+use crate::session::{RippSession, RippTab, TabCamera, ColorMappingRange, TabPane, ActivationContext, PaneLocation};
 use crate::micromanager::{CameraHandle, CameraImage};
 
 impl TabPane for TabCamera {
-    fn label(&self)   -> &str { "Camera" }
-    fn type_id(&self) -> i32  { 2 }
+    fn label(&self)            -> &str         { "Camera" }
+    fn type_id(&self)          -> i32          { 2 }
+    fn default_location(&self) -> PaneLocation { PaneLocation::Left }
     fn on_deactivating(&mut self, live_running: &Arc<AtomicBool>) {
         self.live = live_running.load(Ordering::SeqCst);
         live_running.store(false, Ordering::SeqCst);

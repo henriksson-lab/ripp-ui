@@ -21,7 +21,7 @@ impl Default for ColorMappingRange {
 // --- session level ---
 
 #[derive(Copy, Clone)]
-pub enum TabArea { Left, RightTop, RightBottom }
+pub enum PaneLocation { Left, RightTop, RightBottom }
 
 pub struct RippSession {
     pub projects:          BTreeMap<u32, Project>,
@@ -137,19 +137,21 @@ pub struct ActivationContext {
     pub start_live:   Rc<dyn Fn()>,
     pub live_running: Arc<AtomicBool>,
     pub tab_idx:      usize,
-    pub area:         TabArea,
+    pub area:         PaneLocation,
 }
 
 pub trait TabPane {
-    fn label(&self)   -> &str;
-    fn type_id(&self) -> i32;
+    fn label(&self)            -> &str;
+    fn type_id(&self)          -> i32;
+    fn default_location(&self) -> PaneLocation;
     fn on_deactivating(&mut self, live_running: &Arc<AtomicBool>);
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext);
 }
 
 impl RippTab {
-    pub fn type_id(&self) -> i32  { self.as_pane().type_id() }
-    pub fn label(&self)   -> &str { self.as_pane().label() }
+    pub fn type_id(&self)          -> i32          { self.as_pane().type_id() }
+    pub fn label(&self)            -> &str          { self.as_pane().label() }
+    pub fn default_location(&self) -> PaneLocation  { self.as_pane().default_location() }
 
     pub fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
         match self {
@@ -215,19 +217,19 @@ impl RippSession {
         }
     }
 
-    pub fn tabs(&self, area: TabArea) -> &Vec<RippTab> {
-        match area {
-            TabArea::Left        => &self.tabs_left,
-            TabArea::RightTop    => &self.tabs_right_top,
-            TabArea::RightBottom => &self.tabs_right_bottom,
+    pub fn tabs(&self, loc: PaneLocation) -> &Vec<RippTab> {
+        match loc {
+            PaneLocation::Left        => &self.tabs_left,
+            PaneLocation::RightTop    => &self.tabs_right_top,
+            PaneLocation::RightBottom => &self.tabs_right_bottom,
         }
     }
 
-    pub fn tabs_mut(&mut self, area: TabArea) -> &mut Vec<RippTab> {
-        match area {
-            TabArea::Left        => &mut self.tabs_left,
-            TabArea::RightTop    => &mut self.tabs_right_top,
-            TabArea::RightBottom => &mut self.tabs_right_bottom,
+    pub fn tabs_mut(&mut self, loc: PaneLocation) -> &mut Vec<RippTab> {
+        match loc {
+            PaneLocation::Left        => &mut self.tabs_left,
+            PaneLocation::RightTop    => &mut self.tabs_right_top,
+            PaneLocation::RightBottom => &mut self.tabs_right_bottom,
         }
     }
 
