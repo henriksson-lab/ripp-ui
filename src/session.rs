@@ -132,12 +132,15 @@ pub enum RippTab {
 // ── Tab plugin trait ──────────────────────────────────────────────────────────
 
 pub struct ActivationContext {
-    pub session:      Rc<RefCell<RippSession>>,
-    pub viewer2d:     Rc<RefCell<Viewer2dRenderer>>,
-    pub start_live:   Rc<dyn Fn()>,
-    pub live_running: Arc<AtomicBool>,
-    pub tab_idx:      usize,
-    pub area:         PaneLocation,
+    pub session:          Rc<RefCell<RippSession>>,
+    pub viewer2d:         Rc<RefCell<Viewer2dRenderer>>,
+    pub start_live:       Rc<dyn Fn()>,
+    pub live_running:     Arc<AtomicBool>,
+    pub tab_idx:          usize,
+    pub area:             PaneLocation,
+    pub add_demo_camera:  Option<Rc<dyn Fn()>>,
+    pub add_sim_camera:   Option<Rc<dyn Fn()>>,
+    pub disconnect_all:   Option<Rc<dyn Fn()>>,
 }
 
 pub trait TabPane {
@@ -146,12 +149,15 @@ pub trait TabPane {
     fn default_location(&self) -> PaneLocation;
     fn on_deactivating(&mut self, live_running: &Arc<AtomicBool>);
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext);
+    fn menu_actions(&self) -> Vec<(String, i32)> { vec![] }
+    fn on_menu_action(&mut self, _action_id: i32, _ui: &AppWindow, _ctx: &ActivationContext) {}
 }
 
 impl RippTab {
     pub fn type_id(&self)          -> i32          { self.as_pane().type_id() }
     pub fn label(&self)            -> &str          { self.as_pane().label() }
     pub fn default_location(&self) -> PaneLocation  { self.as_pane().default_location() }
+    pub fn menu_actions(&self)     -> Vec<(String, i32)> { self.as_pane().menu_actions() }
 
     pub fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
         match self {
@@ -177,6 +183,19 @@ impl RippTab {
             Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_deactivating(lr),
             Self::Plots(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
             Self::Help(t)            => (t as &mut dyn TabPane).on_deactivating(lr),
+        }
+    }
+    pub fn on_menu_action(&mut self, action_id: i32, ui: &AppWindow, ctx: &ActivationContext) {
+        match self {
+            Self::Tab3d(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::Tab2d(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::Camera(t)          => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::CamProp(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::ParticleTracking(t)=> (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::Project(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::Plots(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::Help(t)            => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
         }
     }
     fn as_pane(&self) -> &dyn TabPane {

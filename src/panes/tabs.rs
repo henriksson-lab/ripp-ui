@@ -103,13 +103,16 @@ fn add_tab(
 }
 
 fn make_tab_activated_handler(
-    session:      Rc<RefCell<RippSession>>,
-    viewer2d:     Rc<RefCell<Viewer2dRenderer>>,
-    app_weak:     slint::Weak<AppWindow>,
-    live_running: Arc<AtomicBool>,
-    prev_tab:     Rc<RefCell<usize>>,
-    start_live:   Rc<dyn Fn()>,
-    loc:          PaneLocation,
+    session:         Rc<RefCell<RippSession>>,
+    viewer2d:        Rc<RefCell<Viewer2dRenderer>>,
+    app_weak:        slint::Weak<AppWindow>,
+    live_running:    Arc<AtomicBool>,
+    prev_tab:        Rc<RefCell<usize>>,
+    start_live:      Rc<dyn Fn()>,
+    add_demo_camera: Option<Rc<dyn Fn()>>,
+    add_sim_camera:  Option<Rc<dyn Fn()>>,
+    disconnect_all:  Option<Rc<dyn Fn()>>,
+    loc:             PaneLocation,
 ) -> impl Fn(i32) + 'static {
     move |new_idx| {
         let new_idx = new_idx as usize;
@@ -121,12 +124,15 @@ fn make_tab_activated_handler(
 
         if let Some(ui) = app_weak.upgrade() {
             let ctx = ActivationContext {
-                session:      session.clone(),
-                viewer2d:     viewer2d.clone(),
-                start_live:   start_live.clone(),
-                live_running: live_running.clone(),
-                tab_idx:      new_idx,
-                area:         loc,
+                session:         session.clone(),
+                viewer2d:        viewer2d.clone(),
+                start_live:      start_live.clone(),
+                live_running:    live_running.clone(),
+                tab_idx:         new_idx,
+                area:            loc,
+                add_demo_camera: add_demo_camera.clone(),
+                add_sim_camera:  add_sim_camera.clone(),
+                disconnect_all:  disconnect_all.clone(),
             };
             session.borrow().tabs(loc).get(new_idx)
                 .map(|t| t.on_activated(&ui, &ctx));
@@ -142,6 +148,9 @@ pub fn register<F: Fn() + 'static>(
     prev_left_idx:         &Rc<RefCell<usize>>,
     prev_right_top_idx:    &Rc<RefCell<usize>>,
     prev_right_bottom_idx: &Rc<RefCell<usize>>,
+    add_demo_camera:       Option<Rc<dyn Fn()>>,
+    add_sim_camera:        Option<Rc<dyn Fn()>>,
+    disconnect_all:        Option<Rc<dyn Fn()>>,
     start_live: F,
 ) {
     let start_live = Rc::new(start_live);
@@ -203,7 +212,7 @@ pub fn register<F: Fn() + 'static>(
     app.on_left_tab_activated(make_tab_activated_handler(
         session.clone(), viewer2d.clone(), app.as_weak(),
         live_running.clone(), prev_left_idx.clone(), start_live.clone(),
-        PaneLocation::Left,
+        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::Left,
     ));
 
     // ── Right-top pane callbacks ──────────────────────────────────────────────
@@ -228,7 +237,7 @@ pub fn register<F: Fn() + 'static>(
     app.on_right_top_tab_activated(make_tab_activated_handler(
         session.clone(), viewer2d.clone(), app.as_weak(),
         live_running.clone(), prev_right_top_idx.clone(), start_live.clone(),
-        PaneLocation::RightTop,
+        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightTop,
     ));
 
     // ── Right-bottom pane callbacks ───────────────────────────────────────────
@@ -253,7 +262,7 @@ pub fn register<F: Fn() + 'static>(
     app.on_right_bottom_tab_activated(make_tab_activated_handler(
         session.clone(), viewer2d.clone(), app.as_weak(),
         live_running.clone(), prev_right_bottom_idx.clone(), start_live.clone(),
-        PaneLocation::RightBottom,
+        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightBottom,
     ));
 
     // ── Move-tab callbacks ────────────────────────────────────────────────────
@@ -307,4 +316,36 @@ pub fn register<F: Fn() + 'static>(
             }
         }
     });
+
+    // ── Tab custom-action callbacks ───────────────────────────────────────────
+    let make_action_handler = |loc: PaneLocation| {
+        let session         = session.clone();
+        let viewer2d        = viewer2d.clone();
+        let app_weak        = app.as_weak();
+        let live_running    = live_running.clone();
+        let start_live      = start_live.clone();
+        let add_demo_camera = add_demo_camera.clone();
+        let add_sim_camera  = add_sim_camera.clone();
+        let disconnect_all  = disconnect_all.clone();
+        move |tab_idx: i32, action_id: i32| {
+            if let Some(ui) = app_weak.upgrade() {
+                let ctx = ActivationContext {
+                    session:         session.clone(),
+                    viewer2d:        viewer2d.clone(),
+                    start_live:      start_live.clone(),
+                    live_running:    live_running.clone(),
+                    tab_idx:         tab_idx as usize,
+                    area:            loc,
+                    add_demo_camera: add_demo_camera.clone(),
+                    add_sim_camera:  add_sim_camera.clone(),
+                    disconnect_all:  disconnect_all.clone(),
+                };
+                session.borrow_mut().tabs_mut(loc).get_mut(tab_idx as usize)
+                    .map(|t| t.on_menu_action(action_id, &ui, &ctx));
+            }
+        }
+    };
+    app.on_tab_action_left(make_action_handler(PaneLocation::Left));
+    app.on_tab_action_right_top(make_action_handler(PaneLocation::RightTop));
+    app.on_tab_action_right_bottom(make_action_handler(PaneLocation::RightBottom));
 }

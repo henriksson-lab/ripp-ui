@@ -46,6 +46,9 @@ enum CameraCmd {
     GetProps(mpsc::Sender<Vec<DeviceProp>>),
     MoveXY(f64, f64),
     MoveZ(f64),
+    LoadDemoCamera(mpsc::Sender<()>),
+    LoadSimCamera(mpsc::Sender<()>),
+    DisconnectAll(mpsc::Sender<()>),
 }
 
 // ── Public handle (cheaply cloneable, Send) ───────────────────────────────────
@@ -79,6 +82,27 @@ impl CameraHandle {
     pub fn move_z(&self, dz: f64) {
         let _ = self.cmd_tx.send(CameraCmd::MoveZ(dz));
     }
+
+    /// Load and initialize the demo camera device. Blocks until the camera thread confirms.
+    pub fn load_demo_camera(&self) {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.cmd_tx.send(CameraCmd::LoadDemoCamera(tx));
+        rx.recv().ok();
+    }
+
+    /// Load and initialize the simulated camera device. Blocks until the camera thread confirms.
+    pub fn load_sim_camera(&self) {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.cmd_tx.send(CameraCmd::LoadSimCamera(tx));
+        rx.recv().ok();
+    }
+
+    /// Unload all devices. Blocks until the camera thread confirms.
+    pub fn disconnect_all(&self) {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.cmd_tx.send(CameraCmd::DisconnectAll(tx));
+        rx.recv().ok();
+    }
 }
 
 /// Spawn the camera thread and return a handle to it.
@@ -98,6 +122,47 @@ pub fn start_camera_thread(use_sim: bool) -> CameraHandle {
                     }
                 }
                 CameraCmd::MoveZ(dz) => { let _ = cam.core.set_relative_position(dz); }
+                CameraCmd::LoadDemoCamera(reply) => {
+                    cam.core.load_device("DemoCamera", "demo", "DCamera").ok();
+                    cam.core.load_device("Stage",      "demo", "DStage").ok();
+                    cam.core.load_device("XYStage",    "demo", "DXYStage").ok();
+                    cam.core.load_device("Shutter",    "demo", "DShutter").ok();
+                    cam.core.load_device("Wheel",      "demo", "DWheel").ok();
+                    cam.core.initialize_device("DemoCamera").ok();
+                    cam.core.initialize_device("Stage").ok();
+                    cam.core.initialize_device("XYStage").ok();
+                    cam.core.initialize_device("Shutter").ok();
+                    cam.core.initialize_device("Wheel").ok();
+                    cam.core.set_camera_device("DemoCamera").ok();
+                    cam.core.set_focus_device("Stage").ok();
+                    cam.core.set_xy_stage_device("XYStage").ok();
+                    cam.core.set_shutter_device("Shutter").ok();
+                    reply.send(()).ok();
+                }
+                CameraCmd::LoadSimCamera(reply) => {
+                    cam.core.load_device("SimCamera",  "sim", "SimCamera").ok();
+                    cam.core.load_device("SimStage",   "sim", "SimStage").ok();
+                    cam.core.load_device("SimXYStage", "sim", "SimXYStage").ok();
+                    cam.core.load_device("SimShutter", "sim", "SimShutter").ok();
+                    cam.core.load_device("SimWheel",   "sim", "SimWheel").ok();
+                    cam.core.initialize_device("SimCamera").ok();
+                    cam.core.initialize_device("SimStage").ok();
+                    cam.core.initialize_device("SimXYStage").ok();
+                    cam.core.initialize_device("SimShutter").ok();
+                    cam.core.initialize_device("SimWheel").ok();
+                    cam.core.set_camera_device("SimCamera").ok();
+                    cam.core.set_focus_device("SimStage").ok();
+                    cam.core.set_xy_stage_device("SimXYStage").ok();
+                    cam.core.set_shutter_device("SimShutter").ok();
+                    reply.send(()).ok();
+                }
+                CameraCmd::DisconnectAll(reply) => {
+                    let labels: Vec<String> = cam.core.device_labels().into_iter().map(|s| s.to_string()).collect();
+                    for label in labels {
+                        cam.core.unload_device(&label).ok();
+                    }
+                    reply.send(()).ok();
+                }
             }
         }
     });
@@ -111,44 +176,20 @@ struct MicromanagerSession {
 }
 
 impl MicromanagerSession {
-    fn new(use_sim: bool) -> Self {
+    fn new(_use_sim: bool) -> Self {
         let mut core = CMMCore::new();
         core.register_adapter(Box::new(DemoAdapter));
-
-        if use_sim {
-            core.register_adapter(Box::new(SimAdapter));
-            core.load_device("Camera", "sim", "SimCamera").unwrap();
-        } else {
-            core.load_device("Camera", "demo", "DCamera").unwrap();
-        }
-        core.load_device("Stage",   "demo", "DStage").unwrap();
-
-        core.load_device("XYStage", "demo", "DXYStage").unwrap();
-        core.load_device("Shutter", "demo", "DShutter").unwrap();
-        core.load_device("Wheel",   "demo", "DWheel").unwrap();
-
-        core.initialize_device("Camera").unwrap();
-        core.initialize_device("Stage").unwrap();
-        core.initialize_device("XYStage").unwrap();
-        core.initialize_device("Shutter").unwrap();
-        core.initialize_device("Wheel").unwrap();
-
-        core.set_camera_device("Camera").unwrap();
-        core.set_focus_device("Stage").unwrap();
-        core.set_xy_stage_device("XYStage").unwrap();
-        core.set_shutter_device("Shutter").unwrap();
-
+        core.register_adapter(Box::new(SimAdapter));
         Self { core }
     }
 
     fn snap(&mut self) -> CameraImage {
-        self.core.snap_image().unwrap();
-        let frame = self.core.get_image().unwrap();
-        CameraImage {
-            data: frame.data,
-            width: frame.width,
-            height: frame.height,
+        if self.core.snap_image().is_ok() {
+            if let Ok(frame) = self.core.get_image() {
+                return CameraImage { data: frame.data, width: frame.width, height: frame.height };
+            }
         }
+        CameraImage { data: vec![0u8; 64 * 64], width: 64, height: 64 }
     }
 
     fn device_props(&self) -> Vec<DeviceProp> {

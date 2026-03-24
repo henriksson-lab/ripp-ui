@@ -28,6 +28,7 @@ export component LeftPane inherits Rectangle {
     callback close-left-tab(int);
     callback move-left-tab(int, int);
     callback add-pane(int, int);
+    callback tab-action-left(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
     callback viewer2d-panned(float, float);
@@ -71,6 +72,7 @@ export component LeftPane inherits Rectangle {
         close-tab(i)                   => { root.close-left-tab(i); }
         move-tab(i, t)                 => { root.move-left-tab(i, t); }
         add-pane(a, t)                 => { root.add-pane(a, t); }
+        tab-action(i, a)               => { root.tab-action-left(i, a); }
         viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
         viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
         viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }

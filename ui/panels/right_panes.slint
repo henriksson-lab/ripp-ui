@@ -27,6 +27,7 @@ export component RightTopPane inherits Rectangle {
     callback close-tab(int);
     callback move-tab(int, int);
     callback add-pane(int, int);
+    callback tab-action(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
     callback viewer2d-panned(float, float);
@@ -70,6 +71,7 @@ export component RightTopPane inherits Rectangle {
         close-tab(i)                   => { root.close-tab(i); }
         move-tab(i, t)                 => { root.move-tab(i, t); }
         add-pane(a, t)                 => { root.add-pane(a, t); }
+        tab-action(i, a)               => { root.tab-action(i, a); }
         viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
         viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
         viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
@@ -115,6 +117,7 @@ export component RightBottomPane inherits Rectangle {
     callback close-tab(int);
     callback move-tab(int, int);
     callback add-pane(int, int);
+    callback tab-action(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
     callback viewer2d-panned(float, float);
@@ -158,6 +161,7 @@ export component RightBottomPane inherits Rectangle {
         close-tab(i)                   => { root.close-tab(i); }
         move-tab(i, t)                 => { root.move-tab(i, t); }
         add-pane(a, t)                 => { root.add-pane(a, t); }
+        tab-action(i, a)               => { root.tab-action(i, a); }
         viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
         viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
         viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }

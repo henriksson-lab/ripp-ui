@@ -10,8 +10,9 @@ export component DynamicPane inherits Rectangle {
         (root.active-tab < root.tabs.length) ? root.tabs[root.active-tab].tab-type : -1;
     in property <int> current-area: 0;  // 0=Left 1=RightTop 2=RightBottom
     callback close-tab(int);
-    callback move-tab(int, int);  // (tab_idx, target_area)
-    callback add-pane(int, int);  // (area, type_id)
+    callback move-tab(int, int);    // (tab_idx, target_area)
+    callback add-pane(int, int);    // (area, type_id)
+    callback tab-action(int, int);  // (tab_idx, action_id)
 
     // ── Tab3d (type_id 0) ─────────────────────────────────────────────────────
     in property <image> teapot-image;
@@ -860,6 +861,21 @@ export component DynamicPane inherits Rectangle {
                     clicked => { root.tab-menu-open = false; root.move-tab(root.tab-menu-idx, 2); }
                 }
                 Text { text: "Move bottom right"; color: white; font-size: 12px;
+                       x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            if root.tabs[root.tab-menu-idx].menu-actions.length > 0: Rectangle {
+                height: 1px; background: #444444;
+            }
+            for action in root.tabs[root.tab-menu-idx].menu-actions: Rectangle {
+                height: 28px;
+                background: ca-ta.has-hover ? #3D3D3D : transparent;
+                ca-ta := TouchArea {
+                    clicked => {
+                        root.tab-menu-open = false;
+                        root.tab-action(root.tab-menu-idx, action.action-id);
+                    }
+                }
+                Text { text: action.label; color: white; font-size: 12px;
                        x: 10px; height: parent.height; vertical-alignment: center; }
             }
             Rectangle { height: 1px; background: #444444; }

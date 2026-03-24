@@ -10,9 +10,15 @@ export struct DevicePropEntry {
     value: string,
 }
 
+export struct TabMenuAction {
+    label:     string,
+    action-id: int,
+}
+
 export struct LeftTabEntry {
-    label: string,
-    tab-type: int,   // 0=3D View, 1=2D Viewer, 2=Camera
+    label:        string,
+    tab-type:     int,   // 0=3D View, 1=2D Viewer, 2=Camera
+    menu-actions: [TabMenuAction],
 }
 
 export struct ProjectTreeEntry {

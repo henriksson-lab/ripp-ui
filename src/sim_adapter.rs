@@ -1,6 +1,7 @@
 use micromanager::{
     AdapterModule, AnyDevice, Camera, Device, DeviceInfo, DeviceType,
-    ImageRoi, MmError, MmResult, PropertyMap, PropertyValue,
+    FocusDirection, ImageRoi, MmError, MmResult, PropertyMap, PropertyValue,
+    Shutter, Stage, StateDevice, XYStage,
 };
 
 // ── SimCamera ─────────────────────────────────────────────────────────────────
@@ -172,13 +173,279 @@ impl Camera for SimCamera {
     fn is_capturing(&self) -> bool { self.capturing }
 }
 
+// ── SimXYStage ────────────────────────────────────────────────────────────────
+
+pub struct SimXYStage {
+    props:       PropertyMap,
+    initialized: bool,
+    x_um:        f64,
+    y_um:        f64,
+}
+
+impl SimXYStage {
+    pub fn new() -> Self {
+        let mut props = PropertyMap::new();
+        props.define_property("X_um", PropertyValue::Float(0.0), false).unwrap();
+        props.define_property("Y_um", PropertyValue::Float(0.0), false).unwrap();
+        Self { props, initialized: false, x_um: 0.0, y_um: 0.0 }
+    }
+}
+
+impl Device for SimXYStage {
+    fn name(&self)        -> &str { "SimXYStage" }
+    fn description(&self) -> &str { "Simulated XY stage" }
+
+    fn initialize(&mut self) -> MmResult<()> { self.initialized = true; Ok(()) }
+    fn shutdown(&mut self)   -> MmResult<()> { self.initialized = false; Ok(()) }
+
+    fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
+        match name {
+            "X_um" => Ok(PropertyValue::Float(self.x_um)),
+            "Y_um" => Ok(PropertyValue::Float(self.y_um)),
+            _      => self.props.get(name).cloned(),
+        }
+    }
+
+    fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
+        match name {
+            "X_um" => { self.x_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
+            "Y_um" => { self.y_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
+            _      => self.props.set(name, val),
+        }
+    }
+
+    fn property_names(&self)                    -> Vec<String> { self.props.property_names().to_vec() }
+    fn has_property(&self, name: &str)          -> bool        { self.props.has_property(name) }
+    fn is_property_read_only(&self, name: &str) -> bool        { self.props.entry(name).map(|e| e.read_only).unwrap_or(false) }
+    fn device_type(&self)                       -> DeviceType  { DeviceType::XYStage }
+    fn busy(&self)                              -> bool        { false }
+}
+
+impl XYStage for SimXYStage {
+    fn set_xy_position_um(&mut self, x: f64, y: f64) -> MmResult<()> {
+        self.x_um = x; self.y_um = y; Ok(())
+    }
+    fn get_xy_position_um(&self) -> MmResult<(f64, f64)> { Ok((self.x_um, self.y_um)) }
+    fn set_relative_xy_position_um(&mut self, dx: f64, dy: f64) -> MmResult<()> {
+        self.x_um += dx; self.y_um += dy; Ok(())
+    }
+    fn home(&mut self) -> MmResult<()> { self.x_um = 0.0; self.y_um = 0.0; Ok(()) }
+    fn stop(&mut self) -> MmResult<()> { Ok(()) }
+    fn get_limits_um(&self) -> MmResult<(f64, f64, f64, f64)> { Ok((-50_000.0, 50_000.0, -50_000.0, 50_000.0)) }
+    fn get_step_size_um(&self) -> (f64, f64) { (0.1, 0.1) }
+    fn set_origin(&mut self) -> MmResult<()> { self.x_um = 0.0; self.y_um = 0.0; Ok(()) }
+}
+
+// ── SimStage ──────────────────────────────────────────────────────────────────
+
+pub struct SimStage {
+    props:       PropertyMap,
+    initialized: bool,
+    position_um: f64,
+}
+
+impl SimStage {
+    pub fn new() -> Self {
+        let mut props = PropertyMap::new();
+        props.define_property("Position_um", PropertyValue::Float(0.0), false).unwrap();
+        Self { props, initialized: false, position_um: 0.0 }
+    }
+}
+
+impl Device for SimStage {
+    fn name(&self)        -> &str { "SimStage" }
+    fn description(&self) -> &str { "Simulated Z stage" }
+
+    fn initialize(&mut self) -> MmResult<()> { self.initialized = true; Ok(()) }
+    fn shutdown(&mut self)   -> MmResult<()> { self.initialized = false; Ok(()) }
+
+    fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
+        match name {
+            "Position_um" => Ok(PropertyValue::Float(self.position_um)),
+            _             => self.props.get(name).cloned(),
+        }
+    }
+
+    fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
+        match name {
+            "Position_um" => { self.position_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
+            _             => self.props.set(name, val),
+        }
+    }
+
+    fn property_names(&self)                    -> Vec<String> { self.props.property_names().to_vec() }
+    fn has_property(&self, name: &str)          -> bool        { self.props.has_property(name) }
+    fn is_property_read_only(&self, name: &str) -> bool        { self.props.entry(name).map(|e| e.read_only).unwrap_or(false) }
+    fn device_type(&self)                       -> DeviceType  { DeviceType::Stage }
+    fn busy(&self)                              -> bool        { false }
+}
+
+impl Stage for SimStage {
+    fn set_position_um(&mut self, pos: f64) -> MmResult<()> { self.position_um = pos; Ok(()) }
+    fn get_position_um(&self) -> MmResult<f64> { Ok(self.position_um) }
+    fn set_relative_position_um(&mut self, d: f64) -> MmResult<()> { self.position_um += d; Ok(()) }
+    fn home(&mut self) -> MmResult<()> { self.position_um = 0.0; Ok(()) }
+    fn stop(&mut self) -> MmResult<()> { Ok(()) }
+    fn get_limits(&self) -> MmResult<(f64, f64)> { Ok((-1000.0, 1000.0)) }
+    fn get_focus_direction(&self) -> FocusDirection { FocusDirection::TowardSample }
+    fn is_continuous_focus_drive(&self) -> bool { false }
+}
+
+// ── SimShutter ────────────────────────────────────────────────────────────────
+
+pub struct SimShutter {
+    props:       PropertyMap,
+    initialized: bool,
+    open:        bool,
+}
+
+impl SimShutter {
+    pub fn new() -> Self {
+        let mut props = PropertyMap::new();
+        props.define_property("State", PropertyValue::String("Closed".into()), false).unwrap();
+        props.set_allowed_values("State", &["Open", "Closed"]).unwrap();
+        Self { props, initialized: false, open: false }
+    }
+}
+
+impl Device for SimShutter {
+    fn name(&self)        -> &str { "SimShutter" }
+    fn description(&self) -> &str { "Simulated shutter" }
+
+    fn initialize(&mut self) -> MmResult<()> { self.initialized = true; Ok(()) }
+    fn shutdown(&mut self)   -> MmResult<()> { self.open = false; self.initialized = false; Ok(()) }
+
+    fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
+        match name {
+            "State" => Ok(PropertyValue::String(if self.open { "Open" } else { "Closed" }.into())),
+            _       => self.props.get(name).cloned(),
+        }
+    }
+
+    fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
+        match name {
+            "State" => {
+                match val.as_str() {
+                    "Open"   => { self.open = true;  Ok(()) }
+                    "Closed" => { self.open = false; Ok(()) }
+                    _        => Err(MmError::InvalidPropertyValue),
+                }
+            }
+            _ => self.props.set(name, val),
+        }
+    }
+
+    fn property_names(&self)                    -> Vec<String> { self.props.property_names().to_vec() }
+    fn has_property(&self, name: &str)          -> bool        { self.props.has_property(name) }
+    fn is_property_read_only(&self, name: &str) -> bool        { self.props.entry(name).map(|e| e.read_only).unwrap_or(false) }
+    fn device_type(&self)                       -> DeviceType  { DeviceType::Shutter }
+    fn busy(&self)                              -> bool        { false }
+}
+
+impl Shutter for SimShutter {
+    fn set_open(&mut self, open: bool) -> MmResult<()> { self.open = open; Ok(()) }
+    fn get_open(&self) -> MmResult<bool> { Ok(self.open) }
+    fn fire(&mut self, _delta_t: f64) -> MmResult<()> { self.open = true; self.open = false; Ok(()) }
+}
+
+// ── SimWheel ──────────────────────────────────────────────────────────────────
+
+const NUM_WHEEL_POSITIONS: u64 = 6;
+
+pub struct SimWheel {
+    props:       PropertyMap,
+    initialized: bool,
+    position:    u64,
+    labels:      Vec<String>,
+    gate_open:   bool,
+}
+
+impl SimWheel {
+    pub fn new() -> Self {
+        let labels: Vec<String> = (0..NUM_WHEEL_POSITIONS).map(|i| format!("State-{}", i)).collect();
+        let mut props = PropertyMap::new();
+        props.define_property("State", PropertyValue::Integer(0), false).unwrap();
+        props.define_property("Label", PropertyValue::String(labels[0].clone()), false).unwrap();
+        Self { props, initialized: false, position: 0, labels, gate_open: true }
+    }
+}
+
+impl Device for SimWheel {
+    fn name(&self)        -> &str { "SimWheel" }
+    fn description(&self) -> &str { "Simulated filter wheel" }
+
+    fn initialize(&mut self) -> MmResult<()> { self.initialized = true; Ok(()) }
+    fn shutdown(&mut self)   -> MmResult<()> { self.initialized = false; Ok(()) }
+
+    fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
+        match name {
+            "State" => Ok(PropertyValue::Integer(self.position as i64)),
+            "Label" => Ok(PropertyValue::String(self.labels[self.position as usize].clone())),
+            _       => self.props.get(name).cloned(),
+        }
+    }
+
+    fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
+        match name {
+            "State" => {
+                let pos = val.as_i64().ok_or(MmError::InvalidPropertyValue)? as u64;
+                if pos >= NUM_WHEEL_POSITIONS { return Err(MmError::UnknownPosition); }
+                self.position = pos;
+                Ok(())
+            }
+            "Label" => {
+                let label = val.as_str().to_string();
+                let pos = self.labels.iter().position(|l| l == &label)
+                    .ok_or_else(|| MmError::UnknownLabel(label))? as u64;
+                self.position = pos;
+                Ok(())
+            }
+            _ => self.props.set(name, val),
+        }
+    }
+
+    fn property_names(&self)                    -> Vec<String> { self.props.property_names().to_vec() }
+    fn has_property(&self, name: &str)          -> bool        { self.props.has_property(name) }
+    fn is_property_read_only(&self, name: &str) -> bool        { self.props.entry(name).map(|e| e.read_only).unwrap_or(false) }
+    fn device_type(&self)                       -> DeviceType  { DeviceType::State }
+    fn busy(&self)                              -> bool        { false }
+}
+
+impl StateDevice for SimWheel {
+    fn set_position(&mut self, pos: u64) -> MmResult<()> {
+        if pos >= NUM_WHEEL_POSITIONS { return Err(MmError::UnknownPosition); }
+        self.position = pos;
+        Ok(())
+    }
+    fn get_position(&self) -> MmResult<u64> { Ok(self.position) }
+    fn get_number_of_positions(&self) -> u64 { NUM_WHEEL_POSITIONS }
+    fn get_position_label(&self, pos: u64) -> MmResult<String> {
+        self.labels.get(pos as usize).cloned().ok_or(MmError::UnknownPosition)
+    }
+    fn set_position_by_label(&mut self, label: &str) -> MmResult<()> {
+        let pos = self.labels.iter().position(|l| l == label)
+            .ok_or_else(|| MmError::UnknownLabel(label.to_string()))? as u64;
+        self.position = pos;
+        Ok(())
+    }
+    fn set_position_label(&mut self, pos: u64, label: &str) -> MmResult<()> {
+        if pos >= NUM_WHEEL_POSITIONS { return Err(MmError::UnknownPosition); }
+        self.labels[pos as usize] = label.to_string();
+        Ok(())
+    }
+    fn set_gate_open(&mut self, open: bool) -> MmResult<()> { self.gate_open = open; Ok(()) }
+    fn get_gate_open(&self) -> MmResult<bool> { Ok(self.gate_open) }
+}
+
 // ── SimAdapter ────────────────────────────────────────────────────────────────
 
-const DEVICES: &[DeviceInfo] = &[DeviceInfo {
-    name:        "SimCamera",
-    description: "Simulated fluorescence camera with Gaussian PSF spots",
-    device_type: DeviceType::Camera,
-}];
+const DEVICES: &[DeviceInfo] = &[
+    DeviceInfo { name: "SimCamera",  description: "Simulated fluorescence camera with Gaussian PSF spots", device_type: DeviceType::Camera },
+    DeviceInfo { name: "SimXYStage", description: "Simulated XY stage",      device_type: DeviceType::XYStage },
+    DeviceInfo { name: "SimStage",   description: "Simulated Z stage",        device_type: DeviceType::Stage },
+    DeviceInfo { name: "SimShutter", description: "Simulated shutter",        device_type: DeviceType::Shutter },
+    DeviceInfo { name: "SimWheel",   description: "Simulated filter wheel",   device_type: DeviceType::State },
+];
 
 pub struct SimAdapter;
 
@@ -187,8 +454,12 @@ impl AdapterModule for SimAdapter {
     fn devices(&self)                  -> &'static [DeviceInfo] { DEVICES }
     fn create_device(&self, name: &str) -> Option<AnyDevice> {
         match name {
-            "SimCamera" => Some(AnyDevice::Camera(Box::new(SimCamera::new()))),
-            _           => None,
+            "SimCamera"  => Some(AnyDevice::Camera(Box::new(SimCamera::new()))),
+            "SimXYStage" => Some(AnyDevice::XYStage(Box::new(SimXYStage::new()))),
+            "SimStage"   => Some(AnyDevice::Stage(Box::new(SimStage::new()))),
+            "SimShutter" => Some(AnyDevice::Shutter(Box::new(SimShutter::new()))),
+            "SimWheel"   => Some(AnyDevice::StateDevice(Box::new(SimWheel::new()))),
+            _            => None,
         }
     }
 }
