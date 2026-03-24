@@ -1,8 +1,24 @@
+use std::sync::Mutex;
+
 use micromanager::{
     AdapterModule, AnyDevice, Camera, Device, DeviceInfo, DeviceType,
     FocusDirection, ImageRoi, MmError, MmResult, PropertyMap, PropertyValue,
     Shutter, Stage, StateDevice, XYStage,
 };
+
+// ── Shared microscope state ────────────────────────────────────────────────────
+
+pub struct SimMicroscopeState {
+    pub x_um: f64,
+    pub y_um: f64,
+    pub z_um: f64,
+}
+
+pub static SIM_STATE: Mutex<SimMicroscopeState> = Mutex::new(SimMicroscopeState {
+    x_um: 0.0,
+    y_um: 0.0,
+    z_um: 0.0,
+});
 
 // ── SimCamera ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +74,18 @@ impl SimCamera {
         let w = self.width  as usize;
         let h = self.height as usize;
         let exposure_scale = (self.exposure_ms / 10.0) as f32;
-        let sigma2 = 2.0 * SIGMA * SIGMA;
+
+        // Read shared stage position.
+        let (stage_x, stage_y, stage_z) = {
+            let s = SIM_STATE.lock().unwrap();
+            (s.x_um as f32, s.y_um as f32, s.z_um as f32)
+        };
+
+        // Z defocus broadens the PSF and reduces peak amplitude.
+        const PIX_PER_UM: f32 = 10.0;   // 100 nm/pixel
+        let sigma_eff = SIGMA + stage_z.abs() * 0.3;
+        let sigma2    = 2.0 * sigma_eff * sigma_eff;
+        let z_amp     = (-stage_z.abs() * 0.05_f32).exp().max(0.1);
 
         self.image_buf.resize(w * h, 0);
         self.frame_count = self.frame_count.wrapping_add(1);
@@ -66,12 +93,12 @@ impl SimCamera {
 
         for y in 0..h {
             for x in 0..w {
-                // Gaussian PSF contribution from each bead.
+                // Gaussian PSF contribution from each bead, offset by stage XY.
                 let mut signal: f32 = 0.0;
                 for &(bx, by, amp) in BEADS {
-                    let dx = x as f32 - bx;
-                    let dy = y as f32 - by;
-                    signal += amp * (-(dx * dx + dy * dy) / sigma2).exp();
+                    let dx = x as f32 - (bx - stage_x * PIX_PER_UM);
+                    let dy = y as f32 - (by - stage_y * PIX_PER_UM);
+                    signal += amp * z_amp * (-(dx * dx + dy * dy) / sigma2).exp();
                 }
 
                 // Shot-noise via a fast per-pixel hash (no external crate needed).
@@ -178,8 +205,6 @@ impl Camera for SimCamera {
 pub struct SimXYStage {
     props:       PropertyMap,
     initialized: bool,
-    x_um:        f64,
-    y_um:        f64,
 }
 
 impl SimXYStage {
@@ -187,7 +212,7 @@ impl SimXYStage {
         let mut props = PropertyMap::new();
         props.define_property("X_um", PropertyValue::Float(0.0), false).unwrap();
         props.define_property("Y_um", PropertyValue::Float(0.0), false).unwrap();
-        Self { props, initialized: false, x_um: 0.0, y_um: 0.0 }
+        Self { props, initialized: false }
     }
 }
 
@@ -199,18 +224,20 @@ impl Device for SimXYStage {
     fn shutdown(&mut self)   -> MmResult<()> { self.initialized = false; Ok(()) }
 
     fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
+        let s = SIM_STATE.lock().unwrap();
         match name {
-            "X_um" => Ok(PropertyValue::Float(self.x_um)),
-            "Y_um" => Ok(PropertyValue::Float(self.y_um)),
+            "X_um" => Ok(PropertyValue::Float(s.x_um)),
+            "Y_um" => Ok(PropertyValue::Float(s.y_um)),
             _      => self.props.get(name).cloned(),
         }
     }
 
     fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
+        let mut s = SIM_STATE.lock().unwrap();
         match name {
-            "X_um" => { self.x_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
-            "Y_um" => { self.y_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
-            _      => self.props.set(name, val),
+            "X_um" => { s.x_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
+            "Y_um" => { s.y_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
+            _      => { drop(s); self.props.set(name, val) }
         }
     }
 
@@ -223,17 +250,28 @@ impl Device for SimXYStage {
 
 impl XYStage for SimXYStage {
     fn set_xy_position_um(&mut self, x: f64, y: f64) -> MmResult<()> {
-        self.x_um = x; self.y_um = y; Ok(())
+        let mut s = SIM_STATE.lock().unwrap();
+        s.x_um = x; s.y_um = y; Ok(())
     }
-    fn get_xy_position_um(&self) -> MmResult<(f64, f64)> { Ok((self.x_um, self.y_um)) }
+    fn get_xy_position_um(&self) -> MmResult<(f64, f64)> {
+        let s = SIM_STATE.lock().unwrap();
+        Ok((s.x_um, s.y_um))
+    }
     fn set_relative_xy_position_um(&mut self, dx: f64, dy: f64) -> MmResult<()> {
-        self.x_um += dx; self.y_um += dy; Ok(())
+        let mut s = SIM_STATE.lock().unwrap();
+        s.x_um += dx; s.y_um += dy; Ok(())
     }
-    fn home(&mut self) -> MmResult<()> { self.x_um = 0.0; self.y_um = 0.0; Ok(()) }
+    fn home(&mut self) -> MmResult<()> {
+        let mut s = SIM_STATE.lock().unwrap();
+        s.x_um = 0.0; s.y_um = 0.0; Ok(())
+    }
     fn stop(&mut self) -> MmResult<()> { Ok(()) }
     fn get_limits_um(&self) -> MmResult<(f64, f64, f64, f64)> { Ok((-50_000.0, 50_000.0, -50_000.0, 50_000.0)) }
     fn get_step_size_um(&self) -> (f64, f64) { (0.1, 0.1) }
-    fn set_origin(&mut self) -> MmResult<()> { self.x_um = 0.0; self.y_um = 0.0; Ok(()) }
+    fn set_origin(&mut self) -> MmResult<()> {
+        let mut s = SIM_STATE.lock().unwrap();
+        s.x_um = 0.0; s.y_um = 0.0; Ok(())
+    }
 }
 
 // ── SimStage ──────────────────────────────────────────────────────────────────
@@ -241,14 +279,13 @@ impl XYStage for SimXYStage {
 pub struct SimStage {
     props:       PropertyMap,
     initialized: bool,
-    position_um: f64,
 }
 
 impl SimStage {
     pub fn new() -> Self {
         let mut props = PropertyMap::new();
         props.define_property("Position_um", PropertyValue::Float(0.0), false).unwrap();
-        Self { props, initialized: false, position_um: 0.0 }
+        Self { props, initialized: false }
     }
 }
 
@@ -261,15 +298,18 @@ impl Device for SimStage {
 
     fn get_property(&self, name: &str) -> MmResult<PropertyValue> {
         match name {
-            "Position_um" => Ok(PropertyValue::Float(self.position_um)),
+            "Position_um" => Ok(PropertyValue::Float(SIM_STATE.lock().unwrap().z_um)),
             _             => self.props.get(name).cloned(),
         }
     }
 
     fn set_property(&mut self, name: &str, val: PropertyValue) -> MmResult<()> {
         match name {
-            "Position_um" => { self.position_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?; Ok(()) }
-            _             => self.props.set(name, val),
+            "Position_um" => {
+                SIM_STATE.lock().unwrap().z_um = val.as_f64().ok_or(MmError::InvalidPropertyValue)?;
+                Ok(())
+            }
+            _ => self.props.set(name, val),
         }
     }
 
@@ -281,10 +321,16 @@ impl Device for SimStage {
 }
 
 impl Stage for SimStage {
-    fn set_position_um(&mut self, pos: f64) -> MmResult<()> { self.position_um = pos; Ok(()) }
-    fn get_position_um(&self) -> MmResult<f64> { Ok(self.position_um) }
-    fn set_relative_position_um(&mut self, d: f64) -> MmResult<()> { self.position_um += d; Ok(()) }
-    fn home(&mut self) -> MmResult<()> { self.position_um = 0.0; Ok(()) }
+    fn set_position_um(&mut self, pos: f64) -> MmResult<()> {
+        SIM_STATE.lock().unwrap().z_um = pos; Ok(())
+    }
+    fn get_position_um(&self) -> MmResult<f64> {
+        Ok(SIM_STATE.lock().unwrap().z_um)
+    }
+    fn set_relative_position_um(&mut self, d: f64) -> MmResult<()> {
+        SIM_STATE.lock().unwrap().z_um += d; Ok(())
+    }
+    fn home(&mut self) -> MmResult<()> { SIM_STATE.lock().unwrap().z_um = 0.0; Ok(()) }
     fn stop(&mut self) -> MmResult<()> { Ok(()) }
     fn get_limits(&self) -> MmResult<(f64, f64)> { Ok((-1000.0, 1000.0)) }
     fn get_focus_direction(&self) -> FocusDirection { FocusDirection::TowardSample }

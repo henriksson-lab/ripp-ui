@@ -125,7 +125,7 @@ fn run_render_loop(
         let slot         = pending_props.clone();
         let refreshing   = props_refreshing.clone();
         move |dx, dy| {
-            camera.move_xy(dx as f64, dy as f64);
+            camera.move_xy(-dx as f64, -dy as f64);
             if !refreshing.swap(true, Ordering::SeqCst) {
                 let camera     = camera.clone();
                 let slot       = slot.clone();

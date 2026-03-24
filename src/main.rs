@@ -113,7 +113,7 @@ fn main() {
         let app_weak   = app_weak.clone();
         let refreshing = logic.props_refreshing.clone();
         move |dx, dy| {
-            cam.move_xy(dx as f64, dy as f64);
+            cam.move_xy(-dx as f64, -dy as f64);
             spawn_props_refresh(&cam, &app_weak, &refreshing);
         }
     });

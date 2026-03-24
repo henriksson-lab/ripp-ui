@@ -125,8 +125,6 @@ export component DynamicPane inherits Rectangle {
                         }
                         Rectangle {
                             width: 16px;
-                            height: 16px;
-                            border-radius: 3px;
                             background: menu-btn.has-hover ? #555555 : transparent;
                             menu-btn := TouchArea {
                                 clicked => {
@@ -141,9 +139,9 @@ export component DynamicPane inherits Rectangle {
                                 }
                             }
                             Text {
-                                text: "⋮";
+                                text: "▼";
                                 color: #AAAAAA;
-                                font-size: 13px;
+                                font-size: 10px;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
