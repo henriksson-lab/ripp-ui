@@ -8,3 +8,4 @@ pub mod project;
 pub mod file_browser;
 pub mod plots;
 pub mod help;
+pub mod pan_scan;

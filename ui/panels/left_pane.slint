@@ -24,6 +24,22 @@ export component LeftPane inherits Rectangle {
     in-out property <string>         current-path: ".";
     in-out property <int>            selected-project-id: -1;
 
+    // Panorama scan
+    in property <image>  panscan-image;
+    in-out property <float>  panscan-lo: 0.0;
+    in-out property <float>  panscan-hi: 255.0;
+    in-out property <string> panscan-min-x: "";
+    in-out property <string> panscan-max-x: "";
+    in-out property <string> panscan-min-y: "";
+    in-out property <string> panscan-max-y: "";
+    callback panscan-panned(float, float);
+    callback panscan-scrolled(float);
+    callback panscan-settings-changed();
+    callback panscan-set-corner();
+    callback panscan-reset();
+    callback panscan-record();
+    callback panscan-field-edited(int, string);
+
     // Callbacks
     callback close-left-tab(int);
     callback move-left-tab(int, int);
@@ -68,6 +84,21 @@ export component LeftPane inherits Rectangle {
         file-list:                  root.file-list;
         current-path             <=> root.current-path;
         selected-project-id      <=> root.selected-project-id;
+
+        panscan-image            <=> root.panscan-image;
+        panscan-lo               <=> root.panscan-lo;
+        panscan-hi               <=> root.panscan-hi;
+        panscan-min-x            <=> root.panscan-min-x;
+        panscan-max-x            <=> root.panscan-max-x;
+        panscan-min-y            <=> root.panscan-min-y;
+        panscan-max-y            <=> root.panscan-max-y;
+        panscan-panned(dx, dy)          => { root.panscan-panned(dx, dy); }
+        panscan-scrolled(d)             => { root.panscan-scrolled(d); }
+        panscan-settings-changed()      => { root.panscan-settings-changed(); }
+        panscan-set-corner()            => { root.panscan-set-corner(); }
+        panscan-reset()                 => { root.panscan-reset(); }
+        panscan-record()                => { root.panscan-record(); }
+        panscan-field-edited(f, t)      => { root.panscan-field-edited(f, t); }
 
         close-tab(i)                   => { root.close-left-tab(i); }
         move-tab(i, t)                 => { root.move-left-tab(i, t); }

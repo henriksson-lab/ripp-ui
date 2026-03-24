@@ -7,7 +7,7 @@ use crate::AppWindow;
 use crate::session::{
     RippSession, RippTab, PaneLocation, Tab3d, Tab2d, TabCamera, Camera3d, ActivationContext,
     TabCamProp, TabParticleTracking, TabProject, TabFileBrowser, TabPlots, TabHelp,
-    ColorMappingRange,
+    TabPanScan, ColorMappingRange,
 };
 use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_tabs;
@@ -75,6 +75,22 @@ fn move_tab_between_areas(
     }
 }
 
+fn make_tab(type_id: i32) -> Option<RippTab> {
+    Some(match type_id {
+        0 => RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
+        1 => RippTab::Tab2d(Tab2d::default()),
+        2 => RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
+        3 => RippTab::CamProp(TabCamProp),
+        4 => RippTab::ParticleTracking(TabParticleTracking),
+        5 => RippTab::Project(TabProject),
+        6 => RippTab::FileBrowser(TabFileBrowser),
+        7 => RippTab::Plots(TabPlots),
+        8 => RippTab::Help(TabHelp),
+        9 => RippTab::PanScan(TabPanScan::default()),
+        _ => return None,
+    })
+}
+
 fn add_tab(
     session:  &Rc<RefCell<RippSession>>,
     app_weak: &slint::Weak<AppWindow>,
@@ -105,6 +121,7 @@ fn add_tab(
 fn make_tab_activated_handler(
     session:         Rc<RefCell<RippSession>>,
     viewer2d:        Rc<RefCell<Viewer2dRenderer>>,
+    panscan_viewer:  Rc<RefCell<Viewer2dRenderer>>,
     app_weak:        slint::Weak<AppWindow>,
     live_running:    Arc<AtomicBool>,
     prev_tab:        Rc<RefCell<usize>>,
@@ -126,6 +143,7 @@ fn make_tab_activated_handler(
             let ctx = ActivationContext {
                 session:         session.clone(),
                 viewer2d:        viewer2d.clone(),
+                panscan_viewer:  panscan_viewer.clone(),
                 start_live:      start_live.clone(),
                 live_running:    live_running.clone(),
                 tab_idx:         new_idx,
@@ -144,6 +162,7 @@ pub fn register<F: Fn() + 'static>(
     app:                   &AppWindow,
     session:               &Rc<RefCell<RippSession>>,
     viewer2d:              &Rc<RefCell<Viewer2dRenderer>>,
+    panscan_viewer:        &Rc<RefCell<Viewer2dRenderer>>,
     live_running:          &Arc<AtomicBool>,
     prev_left_idx:         &Rc<RefCell<usize>>,
     prev_right_top_idx:    &Rc<RefCell<usize>>,
@@ -210,7 +229,7 @@ pub fn register<F: Fn() + 'static>(
     });
 
     app.on_left_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), app.as_weak(),
+        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
         live_running.clone(), prev_left_idx.clone(), start_live.clone(),
         add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::Left,
     ));
@@ -235,7 +254,7 @@ pub fn register<F: Fn() + 'static>(
     });
 
     app.on_right_top_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), app.as_weak(),
+        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
         live_running.clone(), prev_right_top_idx.clone(), start_live.clone(),
         add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightTop,
     ));
@@ -260,7 +279,7 @@ pub fn register<F: Fn() + 'static>(
     });
 
     app.on_right_bottom_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), app.as_weak(),
+        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
         live_running.clone(), prev_right_bottom_idx.clone(), start_live.clone(),
         add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightBottom,
     ));
@@ -291,19 +310,19 @@ pub fn register<F: Fn() + 'static>(
         let app_weak = app.as_weak();
         move |area, type_id| {
             let Some(loc) = area_from_int(area) else { return };
-            let tab = match type_id {
-                0 => RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
-                1 => RippTab::Tab2d(Tab2d::default()),
-                2 => RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
-                3 => RippTab::CamProp(TabCamProp),
-                4 => RippTab::ParticleTracking(TabParticleTracking),
-                5 => RippTab::Project(TabProject),
-                6 => RippTab::FileBrowser(TabFileBrowser),
-                7 => RippTab::Plots(TabPlots),
-                8 => RippTab::Help(TabHelp),
-                _ => return,
-            };
-            add_tab(&session, &app_weak, tab, loc);
+            let tab = make_tab(type_id);
+            if let Some(tab) = tab { add_tab(&session, &app_weak, tab, loc); }
+        }
+    });
+
+    app.on_add_pane_at_default({
+        let session  = session.clone();
+        let app_weak = app.as_weak();
+        move |type_id| {
+            if let Some(tab) = make_tab(type_id) {
+                let loc = tab.default_location();
+                add_tab(&session, &app_weak, tab, loc);
+            }
         }
     });
 
@@ -321,6 +340,7 @@ pub fn register<F: Fn() + 'static>(
     let make_action_handler = |loc: PaneLocation| {
         let session         = session.clone();
         let viewer2d        = viewer2d.clone();
+        let panscan_viewer  = panscan_viewer.clone();
         let app_weak        = app.as_weak();
         let live_running    = live_running.clone();
         let start_live      = start_live.clone();
@@ -332,6 +352,7 @@ pub fn register<F: Fn() + 'static>(
                 let ctx = ActivationContext {
                     session:         session.clone(),
                     viewer2d:        viewer2d.clone(),
+                    panscan_viewer:  panscan_viewer.clone(),
                     start_live:      start_live.clone(),
                     live_running:    live_running.clone(),
                     tab_idx:         tab_idx as usize,

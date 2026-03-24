@@ -117,6 +117,30 @@ pub struct TabFileBrowser;
 pub struct TabPlots;
 pub struct TabHelp;
 
+pub struct TabPanScan {
+    pub camera:   Camera2d,
+    pub color:    ColorMappingRange,
+    pub min_x:    String,
+    pub max_x:    String,
+    pub min_y:    String,
+    pub max_y:    String,
+    pub uploaded: bool,
+}
+
+impl Default for TabPanScan {
+    fn default() -> Self {
+        Self {
+            camera:   Camera2d { x: 256.0, y: 256.0, zoom: 1.0 },
+            color:    ColorMappingRange::default(),
+            min_x:    String::new(),
+            max_x:    String::new(),
+            min_y:    String::new(),
+            max_y:    String::new(),
+            uploaded: false,
+        }
+    }
+}
+
 pub enum RippTab {
     Tab3d(Tab3d),
     Tab2d(Tab2d),
@@ -127,6 +151,7 @@ pub enum RippTab {
     FileBrowser(TabFileBrowser),
     Plots(TabPlots),
     Help(TabHelp),
+    PanScan(TabPanScan),
 }
 
 // ── Tab plugin trait ──────────────────────────────────────────────────────────
@@ -134,6 +159,7 @@ pub enum RippTab {
 pub struct ActivationContext {
     pub session:          Rc<RefCell<RippSession>>,
     pub viewer2d:         Rc<RefCell<Viewer2dRenderer>>,
+    pub panscan_viewer:   Rc<RefCell<Viewer2dRenderer>>,
     pub start_live:       Rc<dyn Fn()>,
     pub live_running:     Arc<AtomicBool>,
     pub tab_idx:          usize,
@@ -170,6 +196,7 @@ impl RippTab {
             Self::FileBrowser(t)     => (t as &dyn TabPane).on_activated(ui, ctx),
             Self::Plots(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
             Self::Help(t)            => (t as &dyn TabPane).on_activated(ui, ctx),
+            Self::PanScan(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
         }
     }
     pub fn on_deactivating(&mut self, lr: &Arc<AtomicBool>) {
@@ -183,6 +210,7 @@ impl RippTab {
             Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_deactivating(lr),
             Self::Plots(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
             Self::Help(t)            => (t as &mut dyn TabPane).on_deactivating(lr),
+            Self::PanScan(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
         }
     }
     pub fn on_menu_action(&mut self, action_id: i32, ui: &AppWindow, ctx: &ActivationContext) {
@@ -196,6 +224,7 @@ impl RippTab {
             Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
             Self::Plots(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
             Self::Help(t)            => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
+            Self::PanScan(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
         }
     }
     fn as_pane(&self) -> &dyn TabPane {
@@ -209,6 +238,7 @@ impl RippTab {
             Self::FileBrowser(t)     => t,
             Self::Plots(t)           => t,
             Self::Help(t)            => t,
+            Self::PanScan(t)         => t,
         }
     }
 }

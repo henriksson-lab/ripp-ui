@@ -35,8 +35,10 @@
   - `TabFileBrowser` *(session.rs / panes/file_browser.rs)*
   - `TabPlots` *(session.rs / panes/plots.rs)*
   - `TabHelp` *(session.rs / panes/help.rs)*
+  - `TabPanScan` *(session.rs / panes/pan_scan.rs)*
 - `Default`
   - `SimCamera` *(sim_adapter.rs)*
+  - `TabPanScan` *(session.rs)*
 - `Device`
   - `SimCamera` *(sim_adapter.rs)*
   - `SimXYStage` *(sim_adapter.rs)*

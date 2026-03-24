@@ -22,6 +22,7 @@ fn main() {
     }
 
     let app = AppWindow::new().unwrap();
+    app.window().set_size(slint::LogicalSize::new(1024.0, 768.0));
 
     let cam = start_camera_thread(use_sim);
 

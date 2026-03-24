@@ -49,6 +49,7 @@ enum CameraCmd {
     LoadDemoCamera(mpsc::Sender<()>),
     LoadSimCamera(mpsc::Sender<()>),
     DisconnectAll(mpsc::Sender<()>),
+    GetXYPosition(mpsc::Sender<Option<(f64, f64)>>),
 }
 
 // ── Public handle (cheaply cloneable, Send) ───────────────────────────────────
@@ -95,6 +96,13 @@ impl CameraHandle {
         let (tx, rx) = mpsc::channel();
         let _ = self.cmd_tx.send(CameraCmd::LoadSimCamera(tx));
         rx.recv().ok();
+    }
+
+    /// Get the current XY stage position. Returns `None` if no XY stage is loaded.
+    pub fn get_xy_position(&self) -> Option<(f64, f64)> {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.cmd_tx.send(CameraCmd::GetXYPosition(tx));
+        rx.recv().unwrap_or(None)
     }
 
     /// Unload all devices. Blocks until the camera thread confirms.
@@ -155,6 +163,10 @@ pub fn start_camera_thread(use_sim: bool) -> CameraHandle {
                     cam.core.set_xy_stage_device("SimXYStage").ok();
                     cam.core.set_shutter_device("SimShutter").ok();
                     reply.send(()).ok();
+                }
+                CameraCmd::GetXYPosition(reply) => {
+                    let pos = cam.core.get_xy_position().ok();
+                    let _ = reply.send(pos.map(|(x, y)| (x, y)));
                 }
                 CameraCmd::DisconnectAll(reply) => {
                     let labels: Vec<String> = cam.core.device_labels().into_iter().map(|s| s.to_string()).collect();

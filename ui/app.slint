@@ -38,6 +38,14 @@ export component AppWindow inherits Window {
     in-out property <float> camera-lo: 0.0;
     in-out property <float> camera-hi: 255.0;
 
+    in property <image>  panscan-image;
+    in-out property <float>  panscan-lo: 0.0;
+    in-out property <float>  panscan-hi: 255.0;
+    in-out property <string> panscan-min-x: "";
+    in-out property <string> panscan-max-x: "";
+    in-out property <string> panscan-min-y: "";
+    in-out property <string> panscan-max-y: "";
+
     // ── Callbacks (Rust-visible) ──────────────────────────────────────────────
     callback quit();
     callback close-left-tab(int);
@@ -63,6 +71,7 @@ export component AppWindow inherits Window {
     callback move-right-top-tab(int, int);
     callback move-right-bottom-tab(int, int);
     callback add-pane(int, int);
+    callback add-pane-at-default(int);
     callback tab-action-left(int, int);
     callback tab-action-right-top(int, int);
     callback tab-action-right-bottom(int, int);
@@ -73,6 +82,13 @@ export component AppWindow inherits Window {
     callback viewer2d-z-changed(float);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
+    callback panscan-panned(float, float);
+    callback panscan-scrolled(float);
+    callback panscan-settings-changed();
+    callback panscan-set-corner();
+    callback panscan-reset();
+    callback panscan-record();
+    callback panscan-field-edited(int, string);
 
     changed active-left-tab        => { root.left-tab-activated(root.active-left-tab); }
     changed active-right-top-tab    => { root.right-top-tab-activated(root.active-right-top-tab); }
@@ -191,6 +207,20 @@ export component AppWindow inherits Window {
                 project-tree-selected(id)  => { root.project-tree-selected(id); }
                 navigate-to(p)             => { root.navigate-to(p); }
                 open-file(f)               => { root.open-file(f); }
+                panscan-image:                 root.panscan-image;
+                panscan-lo              <=>    root.panscan-lo;
+                panscan-hi              <=>    root.panscan-hi;
+                panscan-min-x           <=>    root.panscan-min-x;
+                panscan-max-x           <=>    root.panscan-max-x;
+                panscan-min-y           <=>    root.panscan-min-y;
+                panscan-max-y           <=>    root.panscan-max-y;
+                panscan-panned(dx, dy)         => { root.panscan-panned(dx, dy); }
+                panscan-scrolled(d)            => { root.panscan-scrolled(d); }
+                panscan-settings-changed()     => { root.panscan-settings-changed(); }
+                panscan-set-corner()           => { root.panscan-set-corner(); }
+                panscan-reset()                => { root.panscan-reset(); }
+                panscan-record()               => { root.panscan-record(); }
+                panscan-field-edited(f, t)     => { root.panscan-field-edited(f, t); }
             }
 
             // Right pane
@@ -237,6 +267,20 @@ export component AppWindow inherits Window {
                     project-tree-selected(id)  => { root.project-tree-selected(id); }
                     navigate-to(p)             => { root.navigate-to(p); }
                     open-file(f)               => { root.open-file(f); }
+                    panscan-image:                 root.panscan-image;
+                    panscan-lo              <=>    root.panscan-lo;
+                    panscan-hi              <=>    root.panscan-hi;
+                    panscan-min-x           <=>    root.panscan-min-x;
+                    panscan-max-x           <=>    root.panscan-max-x;
+                    panscan-min-y           <=>    root.panscan-min-y;
+                    panscan-max-y           <=>    root.panscan-max-y;
+                    panscan-panned(dx, dy)         => { root.panscan-panned(dx, dy); }
+                    panscan-scrolled(d)            => { root.panscan-scrolled(d); }
+                    panscan-settings-changed()     => { root.panscan-settings-changed(); }
+                    panscan-set-corner()           => { root.panscan-set-corner(); }
+                    panscan-reset()                => { root.panscan-reset(); }
+                    panscan-record()               => { root.panscan-record(); }
+                    panscan-field-edited(f, t)     => { root.panscan-field-edited(f, t); }
                 }
 
                 Rectangle { height: 1px; background: #444444; }
@@ -281,6 +325,20 @@ export component AppWindow inherits Window {
                     project-tree-selected(id)  => { root.project-tree-selected(id); }
                     navigate-to(p)             => { root.navigate-to(p); }
                     open-file(f)               => { root.open-file(f); }
+                    panscan-image:                 root.panscan-image;
+                    panscan-lo              <=>    root.panscan-lo;
+                    panscan-hi              <=>    root.panscan-hi;
+                    panscan-min-x           <=>    root.panscan-min-x;
+                    panscan-max-x           <=>    root.panscan-max-x;
+                    panscan-min-y           <=>    root.panscan-min-y;
+                    panscan-max-y           <=>    root.panscan-max-y;
+                    panscan-panned(dx, dy)         => { root.panscan-panned(dx, dy); }
+                    panscan-scrolled(d)            => { root.panscan-scrolled(d); }
+                    panscan-settings-changed()     => { root.panscan-settings-changed(); }
+                    panscan-set-corner()           => { root.panscan-set-corner(); }
+                    panscan-reset()                => { root.panscan-reset(); }
+                    panscan-record()               => { root.panscan-record(); }
+                    panscan-field-edited(f, t)     => { root.panscan-field-edited(f, t); }
                 }
             }
         }
@@ -349,49 +407,46 @@ export component AppWindow inherits Window {
         z: 2;
         x: 66px;
         y: 36px;
-        width: 120px;
+        width: 160px;
         height: view-drop.preferred-height;
         background: #2B2B2B;
         border-width: 1px;
         border-color: #444444;
 
         view-drop := VerticalLayout {
-            Rectangle {
-                height: 30px;
-                background: v3d-item.has-hover ? #3D3D3D : transparent;
-                v3d-item := TouchArea {
-                    clicked => {
-                        root.view-menu-open = false;
-                        root.add-tab-3d();
-                    }
-                }
-                Text { text: "3D View"; color: white; height: parent.height;
-                       vertical-alignment: center; x: 8px; }
-            }
-            Rectangle {
-                height: 30px;
-                background: v2d-item.has-hover ? #3D3D3D : transparent;
-                v2d-item := TouchArea {
-                    clicked => {
-                        root.view-menu-open = false;
-                        root.add-tab-2d();
-                    }
-                }
-                Text { text: "2D Viewer"; color: white; height: parent.height;
-                       vertical-alignment: center; x: 8px; }
-            }
-            Rectangle {
-                height: 30px;
-                background: vcam-item.has-hover ? #3D3D3D : transparent;
-                vcam-item := TouchArea {
-                    clicked => {
-                        root.view-menu-open = false;
-                        root.add-tab-camera();
-                    }
-                }
-                Text { text: "Camera"; color: white; height: parent.height;
-                       vertical-alignment: center; x: 8px; }
-            }
+            Rectangle { height: 30px; background: vm0.has-hover ? #3D3D3D : transparent;
+                vm0 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(0); } }
+                Text { text: "3D View";           color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm1.has-hover ? #3D3D3D : transparent;
+                vm1 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(1); } }
+                Text { text: "2D Viewer";          color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm2.has-hover ? #3D3D3D : transparent;
+                vm2 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(2); } }
+                Text { text: "Camera";             color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 1px; background: #444444; }
+            Rectangle { height: 30px; background: vm3.has-hover ? #3D3D3D : transparent;
+                vm3 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(3); } }
+                Text { text: "Cam Properties";    color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm4.has-hover ? #3D3D3D : transparent;
+                vm4 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(4); } }
+                Text { text: "Particle Tracking"; color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 1px; background: #444444; }
+            Rectangle { height: 30px; background: vm5.has-hover ? #3D3D3D : transparent;
+                vm5 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(5); } }
+                Text { text: "Project";            color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm6.has-hover ? #3D3D3D : transparent;
+                vm6 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(6); } }
+                Text { text: "Files";              color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm7.has-hover ? #3D3D3D : transparent;
+                vm7 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(7); } }
+                Text { text: "Plots";              color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 30px; background: vm8.has-hover ? #3D3D3D : transparent;
+                vm8 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(8); } }
+                Text { text: "Help";               color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
+            Rectangle { height: 1px; background: #444444; }
+            Rectangle { height: 30px; background: vm9.has-hover ? #3D3D3D : transparent;
+                vm9 := TouchArea { clicked => { root.view-menu-open = false; root.add-pane-at-default(9); } }
+                Text { text: "Panorama scan";      color: white; height: parent.height; vertical-alignment: center; x: 8px; } }
         }
     }
 

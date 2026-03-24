@@ -1,4 +1,4 @@
-import { Slider } from "std-widgets.slint";
+import { Slider, LineEdit } from "std-widgets.slint";
 import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
 import { RangeSlider } from "range_slider.slint";
 
@@ -51,6 +51,24 @@ export component DynamicPane inherits Rectangle {
     in-out property <int> selected-project-id: -1;
     callback close-project();
     callback project-tree-selected(int);
+
+    // ── TabPanScan (type_id 9) ────────────────────────────────────────────────
+    in property <image> panscan-image;
+    in-out property <float>  panscan-lo: 0.0;
+    in-out property <float>  panscan-hi: 255.0;
+    in-out property <string> panscan-min-x: "";
+    in-out property <string> panscan-max-x: "";
+    in-out property <string> panscan-min-y: "";
+    in-out property <string> panscan-max-y: "";
+    callback panscan-panned(float, float);
+    callback panscan-scrolled(float);
+    callback panscan-settings-changed();
+    callback panscan-set-corner();
+    callback panscan-reset();
+    callback panscan-record();
+    callback panscan-field-edited(int, string);
+    private property <float> ps-drag-x;
+    private property <float> ps-drag-y;
 
     // ── TabFileBrowser (type_id 6) ────────────────────────────────────────────
     in property <[FileEntry]> file-list;
@@ -729,6 +747,106 @@ export component DynamicPane inherits Rectangle {
                 width: 100%; height: 100%;
                 background: #111111;
             }
+
+            // ── Panorama scan (type_id 9) ──────────────────────────────────────
+            if root.active-tab-type == 9: VerticalLayout {
+                width: 100%; height: 100%;
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #111111;
+                    Image {
+                        source: root.panscan-image;
+                        image-fit: fill;
+                        width: 100%; height: 100%;
+                    }
+                    ps-ta := TouchArea {
+                        mouse-cursor: crosshair;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                root.ps-drag-x = self.mouse-x / 1px;
+                                root.ps-drag-y = self.mouse-y / 1px;
+                            }
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                root.panscan-panned(
+                                    self.mouse-x / 1px - root.ps-drag-x,
+                                    self.mouse-y / 1px - root.ps-drag-y
+                                );
+                                root.ps-drag-x = self.mouse-x / 1px;
+                                root.ps-drag-y = self.mouse-y / 1px;
+                            }
+                        }
+                        scroll-event(e) => {
+                            root.panscan-scrolled(e.delta-y / 1px);
+                            return EventResult.accept;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 28px;
+                    background: #1A1A1A;
+                    HorizontalLayout {
+                        padding-left: 6px; padding-right: 6px;
+                        padding-top: 4px;  padding-bottom: 4px;
+                        RangeSlider {
+                            horizontal-stretch: 1;
+                            minimum: 0.0; maximum: 255.0;
+                            lo <=> root.panscan-lo;
+                            hi <=> root.panscan-hi;
+                            changed(l, h) => { root.panscan-settings-changed(); }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: #1A1A1A;
+                    VerticalLayout {
+                        padding: 6px; spacing: 4px;
+                        HorizontalLayout { spacing: 6px; height: 24px;
+                            Text { text: "Min X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
+                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-x; font-size: 12px;
+                                       edited(t) => { root.panscan-field-edited(0, t); } }
+                            Text { text: "Max X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
+                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-x; font-size: 12px;
+                                       edited(t) => { root.panscan-field-edited(1, t); } }
+                        }
+                        HorizontalLayout { spacing: 6px; height: 24px;
+                            Text { text: "Min Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
+                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-y; font-size: 12px;
+                                       edited(t) => { root.panscan-field-edited(2, t); } }
+                            Text { text: "Max Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
+                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-y; font-size: 12px;
+                                       edited(t) => { root.panscan-field-edited(3, t); } }
+                        }
+                        HorizontalLayout { spacing: 6px; height: 24px;
+                            Rectangle {
+                                width: 90px; height: 24px; border-radius: 3px;
+                                background: sc-btn.has-hover ? #3D3D3D : #2A2A2A;
+                                sc-btn := TouchArea { clicked => { root.panscan-set-corner(); } }
+                                Text { text: "Set corner"; color: white; font-size: 12px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                width: 60px; height: 24px; border-radius: 3px;
+                                background: rst-btn.has-hover ? #3D3D3D : #2A2A2A;
+                                rst-btn := TouchArea { clicked => { root.panscan-reset(); } }
+                                Text { text: "Reset"; color: white; font-size: 12px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                width: 130px; height: 24px; border-radius: 3px;
+                                background: rec-btn.has-hover ? #3D3D3D : #2A2A2A;
+                                rec-btn := TouchArea { clicked => { root.panscan-record(); } }
+                                Text { text: "Record panorama"; color: white; font-size: 12px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -814,6 +932,12 @@ export component DynamicPane inherits Rectangle {
                 background: ap8.has-hover ? #3D3D3D : transparent;
                 ap8 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 8); } }
                 Text { text: "Help";               color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap9.has-hover ? #3D3D3D : transparent;
+                ap9 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 9); } }
+                Text { text: "Panorama scan";      color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
             }
         }
     }

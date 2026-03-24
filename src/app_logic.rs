@@ -45,6 +45,7 @@ pub fn build_tree(session: &RippSession) -> slint::ModelRc<ProjectTreeEntry> {
 pub struct AppLogic {
     pub session:                Rc<RefCell<RippSession>>,
     pub viewer2d:               Rc<RefCell<Viewer2dRenderer>>,
+    pub panscan_viewer:         Rc<RefCell<Viewer2dRenderer>>,
     pub cam:                    CameraHandle,
     pub last_camera_frame:      Arc<Mutex<Option<(Vec<u8>, u32, u32)>>>,
     pub live_running:           Arc<AtomicBool>,
@@ -63,6 +64,7 @@ impl AppLogic {
         Self {
             session:           Rc::new(RefCell::new(s)),
             viewer2d:          Rc::new(RefCell::new(Viewer2dRenderer::new())),
+            panscan_viewer:    Rc::new(RefCell::new(Viewer2dRenderer::new())),
             cam,
             last_camera_frame: Arc::new(Mutex::new(None)),
             live_running:           Arc::new(AtomicBool::new(false)),
@@ -106,7 +108,7 @@ impl AppLogic {
             if let Some(ui) = weak3.upgrade() { refresh_props(&cam3, &ui); }
         }));
 
-        panes::tabs::register(app, &self.session, &self.viewer2d,
+        panes::tabs::register(app, &self.session, &self.viewer2d, &self.panscan_viewer,
                               &self.live_running,
                               &self.prev_tab_idx,
                               &self.prev_right_top_idx,
@@ -120,6 +122,7 @@ impl AppLogic {
         panes::camera_view::register(app, &self.cam, &self.session, &self.last_camera_frame);
         panes::project::register(app, &self.session);
         panes::file_browser::register(app, &self.session, &self.cwd);
+        panes::pan_scan::register(app, &self.session, &self.panscan_viewer, &self.cam);
         app.on_quit(|| std::process::exit(0));
     }
 }
