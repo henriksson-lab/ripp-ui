@@ -4,7 +4,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::{RippSession, RippTab, PaneLocation, Tab3d, Tab2d, TabCamera, Camera3d, ActivationContext};
+use crate::session::{
+    RippSession, RippTab, PaneLocation, Tab3d, Tab2d, TabCamera, Camera3d, ActivationContext,
+    TabCamProp, TabParticleTracking, TabProject, TabFileBrowser, TabPlots, TabHelp,
+    ColorMappingRange,
+};
 use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_tabs;
 
@@ -270,6 +274,27 @@ pub fn register<F: Fn() + 'static>(
             if let Some(to) = area_from_int(target) {
                 move_tab_between_areas(&session, &app_weak, PaneLocation::RightTop, idx as usize, to);
             }
+        }
+    });
+
+    app.on_add_pane({
+        let session  = session.clone();
+        let app_weak = app.as_weak();
+        move |area, type_id| {
+            let Some(loc) = area_from_int(area) else { return };
+            let tab = match type_id {
+                0 => RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
+                1 => RippTab::Tab2d(Tab2d::default()),
+                2 => RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
+                3 => RippTab::CamProp(TabCamProp),
+                4 => RippTab::ParticleTracking(TabParticleTracking),
+                5 => RippTab::Project(TabProject),
+                6 => RippTab::FileBrowser(TabFileBrowser),
+                7 => RippTab::Plots(TabPlots),
+                8 => RippTab::Help(TabHelp),
+                _ => return,
+            };
+            add_tab(&session, &app_weak, tab, loc);
         }
     });
 

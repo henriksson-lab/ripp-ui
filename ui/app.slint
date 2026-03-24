@@ -62,6 +62,7 @@ export component AppWindow inherits Window {
     callback move-left-tab(int, int);
     callback move-right-top-tab(int, int);
     callback move-right-bottom-tab(int, int);
+    callback add-pane(int, int);
     callback viewer2d-object-selected(int, int);
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
@@ -169,6 +170,7 @@ export component AppWindow inherits Window {
                 selected-project-id     <=> root.selected-project-id;
                 close-left-tab(i)          => { root.close-left-tab(i); }
                 move-left-tab(i, t)        => { root.move-left-tab(i, t); }
+                add-pane(a, t)             => { root.add-pane(a, t); }
                 viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                 viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
                 viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
@@ -213,6 +215,7 @@ export component AppWindow inherits Window {
                     selected-project-id     <=> root.selected-project-id;
                     close-tab(i)               => { root.close-right-top-tab(i); }
                     move-tab(i, t)             => { root.move-right-top-tab(i, t); }
+                    add-pane(a, t)             => { root.add-pane(a, t); }
                     viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                     viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
                     viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
@@ -255,6 +258,7 @@ export component AppWindow inherits Window {
                     selected-project-id     <=> root.selected-project-id;
                     close-tab(i)               => { root.close-right-bottom-tab(i); }
                     move-tab(i, t)             => { root.move-right-bottom-tab(i, t); }
+                    add-pane(a, t)             => { root.add-pane(a, t); }
                     viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                     viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
                     viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }

@@ -11,6 +11,7 @@ export component DynamicPane inherits Rectangle {
     in property <int> current-area: 0;  // 0=Left 1=RightTop 2=RightBottom
     callback close-tab(int);
     callback move-tab(int, int);  // (tab_idx, target_area)
+    callback add-pane(int, int);  // (area, type_id)
 
     // ── Tab3d (type_id 0) ─────────────────────────────────────────────────────
     in property <image> teapot-image;
@@ -60,6 +61,7 @@ export component DynamicPane inherits Rectangle {
     private property <bool>   tab-menu-open: false;
     private property <int>    tab-menu-idx: 0;
     private property <length> tab-menu-x: 0;
+    private property <bool>   add-menu-open: false;
 
     // ── Private: Tab3d drag ───────────────────────────────────────────────────
     private property <float> v3d-drag-x;
@@ -145,6 +147,26 @@ export component DynamicPane inherits Rectangle {
                                 vertical-alignment: center;
                             }
                         }
+                    }
+                }
+
+                // ── Add-pane button ───────────────────────────────────────────
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    background: add-btn.has-hover ? #3A3A3A : transparent;
+                    add-btn := TouchArea {
+                        clicked => {
+                            root.tab-menu-open = false;
+                            root.add-menu-open = !root.add-menu-open;
+                        }
+                    }
+                    Text {
+                        text: "+";
+                        color: #AAAAAA;
+                        font-size: 18px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                     }
                 }
             }
@@ -711,14 +733,89 @@ export component DynamicPane inherits Rectangle {
         }
     }
 
-    // ── Dismiss overlay (behind tab menu) ─────────────────────────────────────
-    if root.tab-menu-open: Rectangle {
+    // ── Dismiss overlay (behind both menus) ──────────────────────────────────
+    if root.tab-menu-open || root.add-menu-open: Rectangle {
         z: 1;
         width: 100%; height: 100%;
         background: transparent;
         TouchArea {
             width: 100%; height: 100%;
-            clicked => { root.tab-menu-open = false; }
+            clicked => { root.tab-menu-open = false; root.add-menu-open = false; }
+        }
+    }
+
+    // ── Add-pane dropdown ─────────────────────────────────────────────────────
+    if root.add-menu-open: Rectangle {
+        z: 2;
+        x: root.tabs.length * 94px;
+        y: 28px;
+        width: 148px;
+        height: add-menu-layout.preferred-height;
+        background: #2B2B2B;
+        border-width: 1px;
+        border-color: #444444;
+        drop-shadow-color: #00000060;
+        drop-shadow-blur: 6px;
+
+        TouchArea { width: 100%; height: 100%; }  // prevent click-through
+
+        add-menu-layout := VerticalLayout {
+            Rectangle {
+                height: 28px;
+                background: ap0.has-hover ? #3D3D3D : transparent;
+                ap0 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 0); } }
+                Text { text: "3D View";           color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap1.has-hover ? #3D3D3D : transparent;
+                ap1 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 1); } }
+                Text { text: "2D Viewer";          color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap2.has-hover ? #3D3D3D : transparent;
+                ap2 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 2); } }
+                Text { text: "Camera";             color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle { height: 1px; background: #444444; }
+            Rectangle {
+                height: 28px;
+                background: ap3.has-hover ? #3D3D3D : transparent;
+                ap3 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 3); } }
+                Text { text: "Cam Properties";    color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap4.has-hover ? #3D3D3D : transparent;
+                ap4 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 4); } }
+                Text { text: "Particle Tracking"; color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle { height: 1px; background: #444444; }
+            Rectangle {
+                height: 28px;
+                background: ap5.has-hover ? #3D3D3D : transparent;
+                ap5 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 5); } }
+                Text { text: "Project";            color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap6.has-hover ? #3D3D3D : transparent;
+                ap6 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 6); } }
+                Text { text: "Files";              color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap7.has-hover ? #3D3D3D : transparent;
+                ap7 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 7); } }
+                Text { text: "Plots";              color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
+            Rectangle {
+                height: 28px;
+                background: ap8.has-hover ? #3D3D3D : transparent;
+                ap8 := TouchArea { clicked => { root.add-menu-open = false; root.add-pane(root.current-area, 8); } }
+                Text { text: "Help";               color: white; font-size: 12px; x: 10px; height: parent.height; vertical-alignment: center; }
+            }
         }
     }
 
