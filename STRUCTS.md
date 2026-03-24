@@ -1,0 +1,70 @@
+# Structs and Enums
+
+- *(no traits)*
+  - `ColorMappingRange` *(session.rs)*
+  - `PaneLocation` *(session.rs)*
+  - `WindowSize` *(session.rs)*
+  - `Camera3d` *(session.rs)*
+  - `Camera2d` *(session.rs)*
+  - `Camera2dZ` *(session.rs)*
+  - `RippSession` *(session.rs)*
+  - `RippTab` *(session.rs)*
+  - `ActivationContext` *(session.rs)*
+  - `Project` *(session.rs)*
+  - `ProjectObject` *(session.rs)*
+  - `ProjectData` *(session.rs)*
+  - `BioformatsData` *(session.rs)*
+  - `OmeroData` *(session.rs)*
+  - `CameraImage` *(micromanager.rs)*
+  - `DeviceProp` *(micromanager.rs)*
+  - `CameraHandle` *(micromanager.rs)*
+  - `CameraCmd` *(micromanager.rs)*
+  - `MicromanagerSession` *(micromanager.rs)*
+  - `SimMicroscopeState` *(sim_adapter.rs)*
+  - `AppLogic` *(app_logic.rs)*
+  - `Gpu` *(renderer2d.rs)*
+  - `Viewer2dRenderer` *(renderer2d.rs)*
+  - `Renderer3d` *(renderer3d.rs)*
+- `TabPane`
+  - `Tab3d` *(session.rs / panes/viewer3d.rs)*
+  - `Tab2d` *(session.rs / panes/viewer2d.rs)*
+  - `TabCamera` *(session.rs / panes/camera_view.rs)*
+  - `TabCamProp` *(session.rs / panes/cam_prop.rs)*
+  - `TabParticleTracking` *(session.rs / panes/particle_tracking.rs)*
+  - `TabProject` *(session.rs / panes/project.rs)*
+  - `TabFileBrowser` *(session.rs / panes/file_browser.rs)*
+  - `TabPlots` *(session.rs / panes/plots.rs)*
+  - `TabHelp` *(session.rs / panes/help.rs)*
+- `Default`
+  - `SimCamera` *(sim_adapter.rs)*
+- `Device`
+  - `SimCamera` *(sim_adapter.rs)*
+  - `SimXYStage` *(sim_adapter.rs)*
+  - `SimStage` *(sim_adapter.rs)*
+  - `SimShutter` *(sim_adapter.rs)*
+  - `SimWheel` *(sim_adapter.rs)*
+- `Camera`
+  - `SimCamera` *(sim_adapter.rs)*
+- `XYStage`
+  - `SimXYStage` *(sim_adapter.rs)*
+- `Stage`
+  - `SimStage` *(sim_adapter.rs)*
+- `Shutter`
+  - `SimShutter` *(sim_adapter.rs)*
+- `StateDevice`
+  - `SimWheel` *(sim_adapter.rs)*
+- `AdapterModule`
+  - `SimAdapter` *(sim_adapter.rs)*
+- `Pod`
+  - `Uniforms` *(renderer2d.rs)*
+  - `Uniforms` *(renderer3d.rs)*
+  - `Vertex` *(renderer3d.rs)*
+- `Zeroable`
+  - `Uniforms` *(renderer2d.rs)*
+  - `Uniforms` *(renderer3d.rs)*
+  - `Vertex` *(renderer3d.rs)*
+- `Platform`
+  - `HeadlessPlatform` *(server.rs)*
+- `Deserialize`
+  - `InputEvent` *(server.rs)*
+  - `ViewportQuery` *(server.rs)*
