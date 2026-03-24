@@ -1,9 +1,17 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, atomic::AtomicBool};
 use slint::ComponentHandle;
 use crate::AppWindow;
-use crate::session::RippSession;
+use crate::session::{RippSession, TabProject, TabPane, ActivationContext};
 use crate::app_logic::{build_tree, build_tabs};
+
+impl TabPane for TabProject {
+    fn label(&self)   -> &str { "Project" }
+    fn type_id(&self) -> i32  { 5 }
+    fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
+    fn on_activated(&self, _: &AppWindow, _: &ActivationContext) {}
+}
 
 pub fn register(app: &AppWindow, session: &Rc<RefCell<RippSession>>) {
     // ── Initial state ─────────────────────────────────────────────────────────
