@@ -3,7 +3,7 @@ import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../t
 
 // ── Right-top pane: Cam prop / Part. tracking ─────────────────────────────────
 
-export component RightTopPane {
+export component RightTopPane inherits Rectangle {
     in property <[DevicePropEntry]> device-props;
     in-out property <[LeftTabEntry]> tabs;
     in-out property <int> active-tab: 0;
@@ -16,7 +16,7 @@ export component RightTopPane {
     private property <length> dp-drag3: 0;
 
     pane := DynamicPane {
-        vertical-stretch: 1;
+        width: 100%; height: 100%;
         tabs        <=> root.tabs;
         active-tab  <=> root.active-tab;
         close-tab(i) => { root.close-tab(i); }
@@ -114,7 +114,7 @@ export component RightTopPane {
 
 // ── Right-bottom pane: Project / Files / Plots / Help ─────────────────────────
 
-export component RightBottomPane {
+export component RightBottomPane inherits Rectangle {
     in property <[ProjectTreeEntry]> project-tree;
     in property <[FileEntry]> file-list;
     in-out property <string> current-path: ".";
@@ -135,7 +135,7 @@ export component RightBottomPane {
     private property <bool>   selected-file-is-dir: false;
 
     pane := DynamicPane {
-        vertical-stretch: 1;
+        width: 100%; height: 100%;
         tabs        <=> root.tabs;
         active-tab  <=> root.active-tab;
         close-tab(i) => { root.close-tab(i); }

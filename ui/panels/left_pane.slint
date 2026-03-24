@@ -3,7 +3,7 @@ import { DynamicPane }   from "../widgets/dynamic_pane.slint";
 import { RangeSlider }   from "../widgets/range_slider.slint";
 import { LeftTabEntry, ProjectTreeEntry } from "../types.slint";
 
-export component LeftPane {
+export component LeftPane inherits Rectangle {
     // Data from AppWindow
     in property <image> teapot-image;
     in property <image> camera-image;
@@ -47,7 +47,7 @@ export component LeftPane {
     callback camera-settings-changed();
 
     pane := DynamicPane {
-        vertical-stretch: 1;
+        width: 100%; height: 100%;
         tabs        <=> root.left-tabs;
         active-tab  <=> root.active-left-tab;
         close-tab(i) => { root.close-left-tab(i); }

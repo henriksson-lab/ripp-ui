@@ -4,8 +4,8 @@
 // The actix-web HTTP server runs on a background thread and subscribes to those frames.
 // Mouse and keyboard events posted to /ws are forwarded to Slint each render frame.
 //
-// Run with:   cargo run --bin server
-// Then open:  http://127.0.0.1:8080
+// Invoked via:  ripp --server [--fps] [--sim-camera]
+// Then open:    http://127.0.0.1:8080
 
 use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
@@ -327,7 +327,7 @@ fn encode_png(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
 async fn index() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(include_str!("../../assets/index.html"))
+        .body(include_str!("../assets/index.html"))
 }
 
 #[derive(serde::Deserialize)]
@@ -396,12 +396,9 @@ async fn mjpeg_stream(
         .streaming(body)
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+// ── Entry point ───────────────────────────────────────────────────────────────
 
-fn main() {
-    let show_fps = std::env::args().any(|a| a == "--fps");
-    let use_sim  = std::env::args().any(|a| a == "--sim-camera");
-
+pub fn run(show_fps: bool, use_sim: bool) {
     let viewport:    Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((DEFAULT_W, DEFAULT_H)));
     let event_queue: EventQueue             = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
 

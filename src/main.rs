@@ -6,13 +6,23 @@ use ripp::app_logic::AppLogic;
 use ripp::renderer3d::Renderer3d;
 use ripp::micromanager::start_camera_thread;
 
+mod server;
+
 const TEAPOT_W: u32 = 480;
 const TEAPOT_H: u32 = 400;
 
 fn main() {
+    let show_fps  = std::env::args().any(|a| a == "--fps");
+    let use_sim   = std::env::args().any(|a| a == "--sim-camera");
+    let server_mode = std::env::args().any(|a| a == "--server");
+
+    if server_mode {
+        server::run(show_fps, use_sim);
+        return;
+    }
+
     let app = AppWindow::new().unwrap();
 
-    let use_sim = std::env::args().any(|a| a == "--sim-camera");
     let cam = start_camera_thread(use_sim);
 
     let logic = AppLogic::new(cam.clone());

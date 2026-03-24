@@ -54,6 +54,9 @@ export component DynamicPane {
         }
 
         // ── Caller-supplied content ───────────────────────────────────────────
-        @children
+        Rectangle {
+            vertical-stretch: 1;
+            @children
+        }
     }
 }
