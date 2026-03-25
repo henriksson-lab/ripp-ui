@@ -1,29 +1,25 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use std::sync::{Arc, atomic::AtomicBool};
-use crate::session::{RippSession, RippTab, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, ActivationContext, PaneLocation, find_object_ref, find_object_mut};
+use crate::session::{RippSession, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation, find_object_ref, find_object_mut};
 use crate::renderer2d::Viewer2dRenderer;
 
 // ── GPU helpers ───────────────────────────────────────────────────────────────
 
+/// Upload image from session project into the renderer. `proj_id` must be ≥ 0.
 pub fn upload(
-    session: &Rc<RefCell<RippSession>>,
+    session:  &Rc<RefCell<RippSession>>,
     viewer2d: &mut Viewer2dRenderer,
-    tab_idx: usize,
+    proj_id:  u32,
+    obj_id:   u32,
+    z:        u32,
 ) {
-    let (proj_id, obj_id, z) = {
-        let s = session.borrow();
-        match s.tabs_left.get(tab_idx) {
-            Some(RippTab::Tab2d(t)) if t.selected_proj_id >= 0 =>
-                (t.selected_proj_id, t.selected_obj_id, t.camera.z as u32),
-            _ => return,
-        }
-    };
     let mut s = session.borrow_mut();
-    if let Some(proj) = s.projects.get_mut(&(proj_id as u32)) {
-        if let Some(obj) = find_object_mut(&mut proj.root, obj_id as u32) {
+    if let Some(proj) = s.projects.get_mut(&proj_id) {
+        if let Some(obj) = find_object_mut(&mut proj.root, obj_id) {
             if let ProjectData::Bioformats(bf) = &mut obj.data {
                 let meta = bf.reader.metadata();
                 let w = meta.size_x;
@@ -40,20 +36,7 @@ pub fn upload(
     }
 }
 
-pub fn render(
-    session: &Rc<RefCell<RippSession>>,
-    viewer2d: &Viewer2dRenderer,
-    tab_idx: usize,
-    color: ColorMappingRange,
-    ui: &AppWindow,
-) {
-    let cam = {
-        let s = session.borrow();
-        match s.tabs_left.get(tab_idx) {
-            Some(RippTab::Tab2d(t)) => Camera2d { x: t.camera.x, y: t.camera.y, zoom: t.camera.zoom },
-            _ => return,
-        }
-    };
+pub fn render(viewer2d: &Viewer2dRenderer, cam: Camera2d, color: ColorMappingRange, ui: &AppWindow) {
     if let Some(pixels) = viewer2d.render(cam, color) {
         let sz = viewer2d.size();
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sz.w, sz.h);
@@ -62,6 +45,8 @@ pub fn render(
         ui.set_viewer2d_image_loaded(true);
     }
 }
+
+// ── TabPane impl ──────────────────────────────────────────────────────────────
 
 impl TabPane for Tab2d {
     fn label(&self)            -> &str         { "2D Viewer" }
@@ -76,135 +61,178 @@ impl TabPane for Tab2d {
         if self.selected_proj_id < 0 {
             ui.set_viewer2d_image_loaded(false);
         } else {
-            upload(&ctx.session, &mut ctx.viewer2d.borrow_mut(), ctx.tab_idx);
-            render(&ctx.session, &ctx.viewer2d.borrow(), ctx.tab_idx, self.color, ui);
+            upload(&ctx.session, &mut ctx.viewer2d.borrow_mut(),
+                   self.selected_proj_id as u32, self.selected_obj_id as u32,
+                   self.camera.z as u32);
+            render(&ctx.viewer2d.borrow(),
+                   Camera2d { x: self.camera.x, y: self.camera.y, zoom: self.camera.zoom },
+                   self.color, ui);
         }
     }
+    fn as_any(&self)         -> &dyn Any     { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-// ── Callback registration ─────────────────────────────────────────────────────
+// ── TabType ───────────────────────────────────────────────────────────────────
 
-pub fn register(
-    app: &AppWindow,
-    session: &Rc<RefCell<RippSession>>,
-    viewer2d: &Rc<RefCell<Viewer2dRenderer>>,
-) {
-    app.on_viewer2d_object_selected({
-        let session  = session.clone();
-        let viewer2d = viewer2d.clone();
-        let app_weak = app.as_weak();
-        move |project_id, object_id| {
-            if let Some(ui) = app_weak.upgrade() {
-                let tab_idx = ui.get_active_left_tab() as usize;
-                let (img_w, img_h, z_max) = {
-                    let s = session.borrow();
-                    if let Some(proj) = s.projects.get(&(project_id as u32)) {
-                        if let Some(obj) = find_object_ref(&proj.root, object_id as u32) {
-                            if let ProjectData::Bioformats(bf) = &obj.data {
-                                let meta = bf.reader.metadata();
-                                (meta.size_x as f64, meta.size_y as f64,
-                                 (meta.size_z as i32 - 1).max(0))
+pub struct TabTypeViewer2d;
+
+impl TabType for TabTypeViewer2d {
+    fn type_id(&self)            -> i32          { 1 }
+    fn label(&self)              -> &str         { "2D Viewer" }
+    fn default_location(&self)   -> PaneLocation { PaneLocation::Left }
+    fn visible_on_startup(&self) -> bool         { true }
+    fn create(&self)             -> Box<dyn TabPane> { Box::new(Tab2d::default()) }
+    fn register_callbacks(&self, app: &AppWindow, ctx: &CallbackCtx) {
+        let session  = ctx.session.clone();
+        let viewer2d = ctx.viewer2d.clone();
+
+        app.on_viewer2d_object_selected({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move |project_id, object_id| {
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let (img_w, img_h, z_max) = {
+                        let s = session.borrow();
+                        if let Some(proj) = s.projects.get(&(project_id as u32)) {
+                            if let Some(obj) = find_object_ref(&proj.root, object_id as u32) {
+                                if let ProjectData::Bioformats(bf) = &obj.data {
+                                    let meta = bf.reader.metadata();
+                                    (meta.size_x as f64, meta.size_y as f64,
+                                     (meta.size_z as i32 - 1).max(0))
+                                } else { (0.0, 0.0, 0) }
                             } else { (0.0, 0.0, 0) }
                         } else { (0.0, 0.0, 0) }
-                    } else { (0.0, 0.0, 0) }
-                };
-                {
-                    let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
-                        t.selected_proj_id = project_id;
-                        t.selected_obj_id  = object_id;
-                        t.z_max            = z_max;
-                        t.camera.x    = img_w / 2.0;
-                        t.camera.y    = img_h / 2.0;
-                        t.camera.zoom = 1.0;
-                        t.camera.z    = 0.0;
+                    };
+                    {
+                        let mut s = session.borrow_mut();
+                        if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                            if let Some(t2d) = t.as_any_mut().downcast_mut::<Tab2d>() {
+                                t2d.selected_proj_id = project_id;
+                                t2d.selected_obj_id  = object_id;
+                                t2d.z_max            = z_max;
+                                t2d.camera.x    = img_w / 2.0;
+                                t2d.camera.y    = img_h / 2.0;
+                                t2d.camera.zoom = 1.0;
+                                t2d.camera.z    = 0.0;
+                            }
+                        }
                     }
+                    ui.set_viewer2d_z(0.0);
+                    ui.set_viewer2d_z_max(z_max as f32);
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    upload(&session, &mut viewer2d.borrow_mut(),
+                           project_id as u32, object_id as u32, 0);
+                    render(&viewer2d.borrow(),
+                           Camera2d { x: img_w / 2.0, y: img_h / 2.0, zoom: 1.0 },
+                           color, &ui);
                 }
-                ui.set_viewer2d_z(0.0);
-                ui.set_viewer2d_z_max(z_max as f32);
-                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
-                upload(&session, &mut viewer2d.borrow_mut(), tab_idx);
-                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
-        }
-    });
+        });
 
-    app.on_viewer2d_panned({
-        let session  = session.clone();
-        let viewer2d = viewer2d.clone();
-        let app_weak = app.as_weak();
-        move |dx, dy| {
-            if let Some(ui) = app_weak.upgrade() {
-                let tab_idx = ui.get_active_left_tab() as usize;
-                {
-                    let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
-                        t.camera.x -= dx as f64 / t.camera.zoom;
-                        t.camera.y -= dy as f64 / t.camera.zoom;
+        app.on_viewer2d_panned({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move |dx, dy| {
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let cam = {
+                        let mut s = session.borrow_mut();
+                        if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                            if let Some(t2d) = t.as_any_mut().downcast_mut::<Tab2d>() {
+                                t2d.camera.x -= dx as f64 / t2d.camera.zoom;
+                                t2d.camera.y -= dy as f64 / t2d.camera.zoom;
+                                Some(Camera2d { x: t2d.camera.x, y: t2d.camera.y, zoom: t2d.camera.zoom })
+                            } else { None }
+                        } else { None }
+                    };
+                    if let Some(cam) = cam {
+                        render(&viewer2d.borrow(), cam, color, &ui);
                     }
                 }
-                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
-                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
-        }
-    });
+        });
 
-    app.on_viewer2d_scrolled({
-        let session  = session.clone();
-        let viewer2d = viewer2d.clone();
-        let app_weak = app.as_weak();
-        move |delta| {
-            if let Some(ui) = app_weak.upgrade() {
-                let tab_idx = ui.get_active_left_tab() as usize;
-                {
-                    let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
-                        t.camera.zoom *= (delta as f64 * 0.005_f64).exp();
-                        t.camera.zoom = t.camera.zoom.clamp(0.01, 100.0);
+        app.on_viewer2d_scrolled({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move |delta| {
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let cam = {
+                        let mut s = session.borrow_mut();
+                        if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                            if let Some(t2d) = t.as_any_mut().downcast_mut::<Tab2d>() {
+                                t2d.camera.zoom *= (delta as f64 * 0.005_f64).exp();
+                                t2d.camera.zoom = t2d.camera.zoom.clamp(0.01, 100.0);
+                                Some(Camera2d { x: t2d.camera.x, y: t2d.camera.y, zoom: t2d.camera.zoom })
+                            } else { None }
+                        } else { None }
+                    };
+                    if let Some(cam) = cam {
+                        render(&viewer2d.borrow(), cam, color, &ui);
                     }
                 }
-                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
-                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
-        }
-    });
+        });
 
-    app.on_viewer2d_settings_changed({
-        let session  = session.clone();
-        let viewer2d = viewer2d.clone();
-        let app_weak = app.as_weak();
-        move || {
-            if let Some(ui) = app_weak.upgrade() {
-                let tab_idx = ui.get_active_left_tab() as usize;
-                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
-                {
-                    let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
-                        t.color = color;
+        app.on_viewer2d_settings_changed({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move || {
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let cam = {
+                        let mut s = session.borrow_mut();
+                        if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                            if let Some(t2d) = t.as_any_mut().downcast_mut::<Tab2d>() {
+                                t2d.color = color;
+                                Some(Camera2d { x: t2d.camera.x, y: t2d.camera.y, zoom: t2d.camera.zoom })
+                            } else { None }
+                        } else { None }
+                    };
+                    if let Some(cam) = cam {
+                        render(&viewer2d.borrow(), cam, color, &ui);
                     }
                 }
-                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
-        }
-    });
+        });
 
-    app.on_viewer2d_z_changed({
-        let session  = session.clone();
-        let viewer2d = viewer2d.clone();
-        let app_weak = app.as_weak();
-        move |z| {
-            if let Some(ui) = app_weak.upgrade() {
-                let tab_idx = ui.get_active_left_tab() as usize;
-                {
-                    let mut s = session.borrow_mut();
-                    if let Some(RippTab::Tab2d(t)) = s.tabs_left.get_mut(tab_idx) {
-                        t.camera.z = z.round() as f64;
+        app.on_viewer2d_z_changed({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move |z| {
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let info = {
+                        let mut s = session.borrow_mut();
+                        if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                            if let Some(t2d) = t.as_any_mut().downcast_mut::<Tab2d>() {
+                                t2d.camera.z = z.round() as f64;
+                                if t2d.selected_proj_id >= 0 {
+                                    Some((t2d.selected_proj_id as u32, t2d.selected_obj_id as u32,
+                                          t2d.camera.z as u32,
+                                          Camera2d { x: t2d.camera.x, y: t2d.camera.y, zoom: t2d.camera.zoom }))
+                                } else { None }
+                            } else { None }
+                        } else { None }
+                    };
+                    if let Some((proj_id, obj_id, z_u, cam)) = info {
+                        upload(&session, &mut viewer2d.borrow_mut(), proj_id, obj_id, z_u);
+                        render(&viewer2d.borrow(), cam, color, &ui);
                     }
                 }
-                let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
-                upload(&session, &mut viewer2d.borrow_mut(), tab_idx);
-                render(&session, &viewer2d.borrow(), tab_idx, color, &ui);
             }
-        }
-    });
+        });
+    }
 }

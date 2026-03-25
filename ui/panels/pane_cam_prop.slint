@@ -1,0 +1,80 @@
+import { DevicePropEntry } from "../types.slint";
+
+export component PaneCamProp inherits VerticalLayout {
+    in property <[DevicePropEntry]> device-props;
+
+    private property <length> col1-w: 100px;
+    private property <length> col3-w: 120px;
+    private property <length> hdrag1: 0;
+    private property <length> hdrag3: 0;
+
+    Rectangle {
+        height: 20px;
+        background: #000000;
+        HorizontalLayout {
+            padding-left: 4px; padding-right: 4px;
+            Text { text: "Device";   color: #888888; font-size: 11px; vertical-alignment: center; width: root.col1-w; overflow: elide; }
+            Rectangle {
+                width: 5px; height: parent.height;
+                background: dph1.pressed ? #666666 : (dph1.has-hover ? #444444 : transparent);
+                dph1 := TouchArea {
+                    mouse-cursor: col-resize;
+                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.hdrag1 = self.mouse-x; } }
+                    moved => { root.col1-w = max(40px, root.col1-w + self.mouse-x - root.hdrag1); }
+                }
+            }
+            Text { text: "Property"; color: #888888; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            Rectangle {
+                width: 5px; height: parent.height;
+                background: dph3.pressed ? #666666 : (dph3.has-hover ? #444444 : transparent);
+                dph3 := TouchArea {
+                    mouse-cursor: col-resize;
+                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.hdrag3 = self.mouse-x; } }
+                    moved => { root.col3-w = max(40px, root.col3-w - (self.mouse-x - root.hdrag3)); }
+                }
+            }
+            Text { text: "Value";    color: #888888; font-size: 11px; vertical-alignment: center; width: root.col3-w; overflow: elide; }
+        }
+    }
+    Rectangle { height: 1px; background: #2A2A2A; }
+
+    Rectangle {
+        vertical-stretch: 1;
+        background: #000000;
+        clip: true;
+
+        prop-flick := Flickable {
+            width: parent.width - 8px;
+            height: parent.height;
+            viewport-height: prop-entries.preferred-height;
+
+            prop-entries := VerticalLayout {
+                for entry in root.device-props: Rectangle {
+                    height: 22px;
+                    background: prop-row.has-hover ? #1E1E1E : #000000;
+                    prop-row := TouchArea {}
+                    HorizontalLayout {
+                        padding-left: 4px; padding-right: 4px; spacing: 0px;
+                        Text { text: entry.device;   color: #6699CC; font-size: 12px; vertical-alignment: center; width: root.col1-w; overflow: elide; }
+                        Rectangle { width: 5px; }
+                        Text { text: entry.property; color: #CCCCCC; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        Rectangle { width: 5px; }
+                        Text { text: entry.value;    color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: root.col3-w; overflow: elide; }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: parent.width - 6px; width: 6px; height: parent.height;
+            background: #111111;
+            Rectangle {
+                visible: prop-flick.viewport-height > prop-flick.height;
+                width: 4px; x: 1px;
+                y: (-prop-flick.viewport-y / prop-flick.viewport-height) * parent.height;
+                height: max(20px, (prop-flick.height / prop-flick.viewport-height) * parent.height);
+                background: #555555; border-radius: 2px;
+            }
+        }
+    }
+}

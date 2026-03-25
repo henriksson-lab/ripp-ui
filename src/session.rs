@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -5,6 +6,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use glam::Mat4;
 use crate::AppWindow;
 use crate::renderer2d::Viewer2dRenderer;
+use crate::micromanager::CameraHandle;
 
 // --- color mapping ---
 
@@ -25,9 +27,9 @@ pub enum PaneLocation { Left, RightTop, RightBottom }
 
 pub struct RippSession {
     pub projects:          BTreeMap<u32, Project>,
-    pub tabs_left:         Vec<RippTab>,
-    pub tabs_right_top:    Vec<RippTab>,
-    pub tabs_right_bottom: Vec<RippTab>,
+    pub tabs_left:         Vec<Box<dyn TabPane>>,
+    pub tabs_right_top:    Vec<Box<dyn TabPane>>,
+    pub tabs_right_bottom: Vec<Box<dyn TabPane>>,
     next_id: u32,
 }
 
@@ -141,20 +143,7 @@ impl Default for TabPanScan {
     }
 }
 
-pub enum RippTab {
-    Tab3d(Tab3d),
-    Tab2d(Tab2d),
-    Camera(TabCamera),
-    CamProp(TabCamProp),
-    ParticleTracking(TabParticleTracking),
-    Project(TabProject),
-    FileBrowser(TabFileBrowser),
-    Plots(TabPlots),
-    Help(TabHelp),
-    PanScan(TabPanScan),
-}
-
-// ── Tab plugin trait ──────────────────────────────────────────────────────────
+// ── Tab plugin traits ─────────────────────────────────────────────────────────
 
 pub struct ActivationContext {
     pub session:          Rc<RefCell<RippSession>>,
@@ -177,96 +166,47 @@ pub trait TabPane {
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext);
     fn menu_actions(&self) -> Vec<(String, i32)> { vec![] }
     fn on_menu_action(&mut self, _action_id: i32, _ui: &AppWindow, _ctx: &ActivationContext) {}
+    fn as_any(&self)         -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl RippTab {
-    pub fn type_id(&self)          -> i32          { self.as_pane().type_id() }
-    pub fn label(&self)            -> &str          { self.as_pane().label() }
-    pub fn default_location(&self) -> PaneLocation  { self.as_pane().default_location() }
-    pub fn menu_actions(&self)     -> Vec<(String, i32)> { self.as_pane().menu_actions() }
+/// Shared context passed to `TabType::register_callbacks`.
+pub struct CallbackCtx {
+    pub session:         Rc<RefCell<RippSession>>,
+    pub viewer2d:        Rc<RefCell<Viewer2dRenderer>>,
+    pub panscan_viewer:  Rc<RefCell<Viewer2dRenderer>>,
+    pub cam:             CameraHandle,
+    pub live_running:    Arc<AtomicBool>,
+    pub start_live:      Rc<dyn Fn()>,
+    pub add_demo_camera: Option<Rc<dyn Fn()>>,
+    pub add_sim_camera:  Option<Rc<dyn Fn()>>,
+    pub disconnect_all:  Option<Rc<dyn Fn()>>,
+    pub cwd:             Rc<RefCell<std::path::PathBuf>>,
+    pub last_camera_frame: std::sync::Arc<std::sync::Mutex<Option<(Vec<u8>, u32, u32)>>>,
+}
 
-    pub fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
-        match self {
-            Self::Tab3d(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Tab2d(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Camera(t)          => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::CamProp(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::ParticleTracking(t)=> (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Project(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::FileBrowser(t)     => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Plots(t)           => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::Help(t)            => (t as &dyn TabPane).on_activated(ui, ctx),
-            Self::PanScan(t)         => (t as &dyn TabPane).on_activated(ui, ctx),
-        }
-    }
-    pub fn on_deactivating(&mut self, lr: &Arc<AtomicBool>) {
-        match self {
-            Self::Tab3d(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Tab2d(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Camera(t)          => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::CamProp(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::ParticleTracking(t)=> (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Project(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Plots(t)           => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::Help(t)            => (t as &mut dyn TabPane).on_deactivating(lr),
-            Self::PanScan(t)         => (t as &mut dyn TabPane).on_deactivating(lr),
-        }
-    }
-    pub fn on_menu_action(&mut self, action_id: i32, ui: &AppWindow, ctx: &ActivationContext) {
-        match self {
-            Self::Tab3d(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::Tab2d(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::Camera(t)          => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::CamProp(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::ParticleTracking(t)=> (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::Project(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::FileBrowser(t)     => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::Plots(t)           => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::Help(t)            => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-            Self::PanScan(t)         => (t as &mut dyn TabPane).on_menu_action(action_id, ui, ctx),
-        }
-    }
-    fn as_pane(&self) -> &dyn TabPane {
-        match self {
-            Self::Tab3d(t)           => t,
-            Self::Tab2d(t)           => t,
-            Self::Camera(t)          => t,
-            Self::CamProp(t)         => t,
-            Self::ParticleTracking(t)=> t,
-            Self::Project(t)         => t,
-            Self::FileBrowser(t)     => t,
-            Self::Plots(t)           => t,
-            Self::Help(t)            => t,
-            Self::PanScan(t)         => t,
-        }
-    }
+/// Factory + metadata for a tab type. One instance per type, stored in the registry.
+pub trait TabType {
+    fn type_id(&self)            -> i32;
+    fn label(&self)              -> &str;
+    fn default_location(&self)   -> PaneLocation;
+    fn visible_on_startup(&self) -> bool { false }
+    fn create(&self)             -> Box<dyn TabPane>;
+    fn register_callbacks(&self, app: &AppWindow, ctx: &CallbackCtx);
 }
 
 impl RippSession {
     pub fn new() -> Self {
         Self {
-            projects: BTreeMap::new(),
-            tabs_left: vec![
-                RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
-                RippTab::Tab2d(Tab2d::default()),
-                RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
-            ],
-            tabs_right_top: vec![
-                RippTab::CamProp(TabCamProp),
-                RippTab::ParticleTracking(TabParticleTracking),
-            ],
-            tabs_right_bottom: vec![
-                RippTab::Project(TabProject),
-                RippTab::FileBrowser(TabFileBrowser),
-                RippTab::Plots(TabPlots),
-                RippTab::Help(TabHelp),
-            ],
+            projects:          BTreeMap::new(),
+            tabs_left:         Vec::new(),
+            tabs_right_top:    Vec::new(),
+            tabs_right_bottom: Vec::new(),
             next_id: 0,
         }
     }
 
-    pub fn tabs(&self, loc: PaneLocation) -> &Vec<RippTab> {
+    pub fn tabs(&self, loc: PaneLocation) -> &[Box<dyn TabPane>] {
         match loc {
             PaneLocation::Left        => &self.tabs_left,
             PaneLocation::RightTop    => &self.tabs_right_top,
@@ -274,7 +214,7 @@ impl RippSession {
         }
     }
 
-    pub fn tabs_mut(&mut self, loc: PaneLocation) -> &mut Vec<RippTab> {
+    pub fn tabs_mut(&mut self, loc: PaneLocation) -> &mut Vec<Box<dyn TabPane>> {
         match loc {
             PaneLocation::Left        => &mut self.tabs_left,
             PaneLocation::RightTop    => &mut self.tabs_right_top,

@@ -5,6 +5,7 @@ use ripp::{AppWindow, DevicePropEntry};
 use ripp::app_logic::AppLogic;
 use ripp::renderer3d::Renderer3d;
 use ripp::micromanager::start_camera_thread;
+use ripp::session::{Tab3d, Camera3d, TabCamera};
 
 mod server;
 
@@ -100,8 +101,10 @@ fn main() {
             if let Some(ui) = app_weak.upgrade() {
                 let tab_idx = ui.get_active_left_tab() as usize;
                 let mut s = session.borrow_mut();
-                if let Some(ripp::session::RippTab::Camera(tc)) = s.tabs_left.get_mut(tab_idx) {
-                    tc.live = enabled;
+                if let Some(t) = s.tabs_left.get_mut(tab_idx) {
+                    if let Some(tc) = t.as_any_mut().downcast_mut::<TabCamera>() {
+                        tc.live = enabled;
+                    }
                 }
             }
             if enabled { start_live(); } else { live_running.store(false, Ordering::SeqCst); }
@@ -145,15 +148,15 @@ fn main() {
                     .unwrap_or(0);
                 let camera = {
                     let s = session.borrow();
-                    match s.tabs_left.get(tab_idx) {
-                        Some(ripp::session::RippTab::Tab3d(t3)) => {
-                            ripp::session::Camera3d {
-                                yaw:      t3.camera.yaw,
-                                pitch:    t3.camera.pitch,
-                                distance: t3.camera.distance,
-                            }
-                        }
-                        _ => return,
+                    match s.tabs_left.get(tab_idx)
+                        .and_then(|t| t.as_any().downcast_ref::<Tab3d>())
+                    {
+                        Some(t3) => Camera3d {
+                            yaw:      t3.camera.yaw,
+                            pitch:    t3.camera.pitch,
+                            distance: t3.camera.distance,
+                        },
+                        None => return,
                     }
                 };
                 let pixels = renderer.render_frame(&camera);

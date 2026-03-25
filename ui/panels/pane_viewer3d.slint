@@ -1,0 +1,37 @@
+export component PaneViewer3d inherits Rectangle {
+    in property <image> teapot-image;
+    callback viewer3d-panned(float, float);
+    callback viewer3d-scrolled(float);
+
+    private property <float> drag-x;
+    private property <float> drag-y;
+
+    Image {
+        source: root.teapot-image;
+        width: 100%; height: 100%;
+        image-fit: fill;
+    }
+    TouchArea {
+        mouse-cursor: crosshair;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.drag-x = self.mouse-x / 1px;
+                root.drag-y = self.mouse-y / 1px;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.viewer3d-panned(
+                    self.mouse-x / 1px - root.drag-x,
+                    self.mouse-y / 1px - root.drag-y
+                );
+                root.drag-x = self.mouse-x / 1px;
+                root.drag-y = self.mouse-y / 1px;
+            }
+        }
+        scroll-event(e) => {
+            root.viewer3d-scrolled(e.delta-y / 1px);
+            return EventResult.accept;
+        }
+    }
+}

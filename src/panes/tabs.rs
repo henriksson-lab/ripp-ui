@@ -1,15 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use crate::session::{
-    RippSession, RippTab, PaneLocation, Tab3d, Tab2d, TabCamera, Camera3d, ActivationContext,
-    TabCamProp, TabParticleTracking, TabProject, TabFileBrowser, TabPlots, TabHelp,
-    TabPanScan, ColorMappingRange,
+    RippSession, TabPane, TabType, PaneLocation, ActivationContext, CallbackCtx,
 };
-use crate::renderer2d::Viewer2dRenderer;
 use crate::app_logic::build_tabs;
 
 fn area_from_int(n: i32) -> Option<PaneLocation> {
@@ -75,26 +70,10 @@ fn move_tab_between_areas(
     }
 }
 
-fn make_tab(type_id: i32) -> Option<RippTab> {
-    Some(match type_id {
-        0 => RippTab::Tab3d(Tab3d { camera: Camera3d::default() }),
-        1 => RippTab::Tab2d(Tab2d::default()),
-        2 => RippTab::Camera(TabCamera { live: false, color: ColorMappingRange::default() }),
-        3 => RippTab::CamProp(TabCamProp),
-        4 => RippTab::ParticleTracking(TabParticleTracking),
-        5 => RippTab::Project(TabProject),
-        6 => RippTab::FileBrowser(TabFileBrowser),
-        7 => RippTab::Plots(TabPlots),
-        8 => RippTab::Help(TabHelp),
-        9 => RippTab::PanScan(TabPanScan::default()),
-        _ => return None,
-    })
-}
-
 fn add_tab(
     session:  &Rc<RefCell<RippSession>>,
     app_weak: &slint::Weak<AppWindow>,
-    tab:      RippTab,
+    tab:      Box<dyn TabPane>,
     loc:      PaneLocation,
 ) {
     session.borrow_mut().tabs_mut(loc).push(tab);
@@ -119,65 +98,51 @@ fn add_tab(
 }
 
 fn make_tab_activated_handler(
-    session:         Rc<RefCell<RippSession>>,
-    viewer2d:        Rc<RefCell<Viewer2dRenderer>>,
-    panscan_viewer:  Rc<RefCell<Viewer2dRenderer>>,
-    app_weak:        slint::Weak<AppWindow>,
-    live_running:    Arc<AtomicBool>,
-    prev_tab:        Rc<RefCell<usize>>,
-    start_live:      Rc<dyn Fn()>,
-    add_demo_camera: Option<Rc<dyn Fn()>>,
-    add_sim_camera:  Option<Rc<dyn Fn()>>,
-    disconnect_all:  Option<Rc<dyn Fn()>>,
-    loc:             PaneLocation,
+    ctx:      CallbackCtx,
+    app_weak: slint::Weak<AppWindow>,
+    prev_tab: Rc<RefCell<usize>>,
+    loc:      PaneLocation,
 ) -> impl Fn(i32) + 'static {
     move |new_idx| {
         let new_idx = new_idx as usize;
         let old_idx = *prev_tab.borrow();
         *prev_tab.borrow_mut() = new_idx;
 
-        session.borrow_mut().tabs_mut(loc).get_mut(old_idx)
-            .map(|t| t.on_deactivating(&live_running));
+        ctx.session.borrow_mut().tabs_mut(loc).get_mut(old_idx)
+            .map(|t| t.on_deactivating(&ctx.live_running));
 
         if let Some(ui) = app_weak.upgrade() {
-            let ctx = ActivationContext {
-                session:         session.clone(),
-                viewer2d:        viewer2d.clone(),
-                panscan_viewer:  panscan_viewer.clone(),
-                start_live:      start_live.clone(),
-                live_running:    live_running.clone(),
+            let act_ctx = ActivationContext {
+                session:         ctx.session.clone(),
+                viewer2d:        ctx.viewer2d.clone(),
+                panscan_viewer:  ctx.panscan_viewer.clone(),
+                start_live:      ctx.start_live.clone(),
+                live_running:    ctx.live_running.clone(),
                 tab_idx:         new_idx,
                 area:            loc,
-                add_demo_camera: add_demo_camera.clone(),
-                add_sim_camera:  add_sim_camera.clone(),
-                disconnect_all:  disconnect_all.clone(),
+                add_demo_camera: ctx.add_demo_camera.clone(),
+                add_sim_camera:  ctx.add_sim_camera.clone(),
+                disconnect_all:  ctx.disconnect_all.clone(),
             };
-            session.borrow().tabs(loc).get(new_idx)
-                .map(|t| t.on_activated(&ui, &ctx));
+            ctx.session.borrow().tabs(loc).get(new_idx)
+                .map(|t| t.on_activated(&ui, &act_ctx));
         }
     }
 }
 
-pub fn register<F: Fn() + 'static>(
+pub fn register(
     app:                   &AppWindow,
     session:               &Rc<RefCell<RippSession>>,
-    viewer2d:              &Rc<RefCell<Viewer2dRenderer>>,
-    panscan_viewer:        &Rc<RefCell<Viewer2dRenderer>>,
-    live_running:          &Arc<AtomicBool>,
+    tab_types:             &[Box<dyn TabType>],
+    ctx:                   &CallbackCtx,
     prev_left_idx:         &Rc<RefCell<usize>>,
     prev_right_top_idx:    &Rc<RefCell<usize>>,
     prev_right_bottom_idx: &Rc<RefCell<usize>>,
-    add_demo_camera:       Option<Rc<dyn Fn()>>,
-    add_sim_camera:        Option<Rc<dyn Fn()>>,
-    disconnect_all:        Option<Rc<dyn Fn()>>,
-    start_live: F,
 ) {
-    let start_live = Rc::new(start_live);
-
     // ── Initial state ─────────────────────────────────────────────────────────
-    app.set_left_tabs(build_tabs(&session.borrow().tabs_left));
-    app.set_right_top_tabs(build_tabs(&session.borrow().tabs_right_top));
-    app.set_right_bottom_tabs(build_tabs(&session.borrow().tabs_right_bottom));
+    app.set_left_tabs(build_tabs(session.borrow().tabs(PaneLocation::Left)));
+    app.set_right_top_tabs(build_tabs(session.borrow().tabs(PaneLocation::RightTop)));
+    app.set_right_bottom_tabs(build_tabs(session.borrow().tabs(PaneLocation::RightBottom)));
 
     // ── Left pane callbacks ───────────────────────────────────────────────────
     app.on_close_left_tab({
@@ -189,7 +154,7 @@ pub fn register<F: Fn() + 'static>(
             if index < s.tabs_left.len() { s.tabs_left.remove(index); }
             drop(s);
             if let Some(ui) = app_weak.upgrade() {
-                ui.set_left_tabs(build_tabs(&session.borrow().tabs_left));
+                ui.set_left_tabs(build_tabs(session.borrow().tabs(PaneLocation::Left)));
                 let new_len = session.borrow().tabs_left.len() as i32;
                 if ui.get_active_left_tab() >= new_len {
                     ui.set_active_left_tab((new_len - 1).max(0));
@@ -198,40 +163,8 @@ pub fn register<F: Fn() + 'static>(
         }
     });
 
-    app.on_add_tab_3d({
-        let session  = session.clone();
-        let app_weak = app.as_weak();
-        move || {
-            let tab = RippTab::Tab3d(Tab3d { camera: Camera3d::default() });
-            let loc = tab.default_location();
-            add_tab(&session, &app_weak, tab, loc);
-        }
-    });
-
-    app.on_add_tab_2d({
-        let session  = session.clone();
-        let app_weak = app.as_weak();
-        move || {
-            let tab = RippTab::Tab2d(Tab2d::default());
-            let loc = tab.default_location();
-            add_tab(&session, &app_weak, tab, loc);
-        }
-    });
-
-    app.on_add_tab_camera({
-        let session  = session.clone();
-        let app_weak = app.as_weak();
-        move || {
-            let tab = RippTab::Camera(TabCamera { live: false, color: crate::session::ColorMappingRange::default() });
-            let loc = tab.default_location();
-            add_tab(&session, &app_weak, tab, loc);
-        }
-    });
-
     app.on_left_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
-        live_running.clone(), prev_left_idx.clone(), start_live.clone(),
-        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::Left,
+        clone_ctx(ctx), app.as_weak(), prev_left_idx.clone(), PaneLocation::Left,
     ));
 
     // ── Right-top pane callbacks ──────────────────────────────────────────────
@@ -244,7 +177,7 @@ pub fn register<F: Fn() + 'static>(
             if index < s.tabs_right_top.len() { s.tabs_right_top.remove(index); }
             drop(s);
             if let Some(ui) = app_weak.upgrade() {
-                ui.set_right_top_tabs(build_tabs(&session.borrow().tabs_right_top));
+                ui.set_right_top_tabs(build_tabs(session.borrow().tabs(PaneLocation::RightTop)));
                 let new_len = session.borrow().tabs_right_top.len() as i32;
                 if ui.get_active_right_top_tab() >= new_len {
                     ui.set_active_right_top_tab((new_len - 1).max(0));
@@ -254,9 +187,7 @@ pub fn register<F: Fn() + 'static>(
     });
 
     app.on_right_top_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
-        live_running.clone(), prev_right_top_idx.clone(), start_live.clone(),
-        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightTop,
+        clone_ctx(ctx), app.as_weak(), prev_right_top_idx.clone(), PaneLocation::RightTop,
     ));
 
     // ── Right-bottom pane callbacks ───────────────────────────────────────────
@@ -269,7 +200,7 @@ pub fn register<F: Fn() + 'static>(
             if index < s.tabs_right_bottom.len() { s.tabs_right_bottom.remove(index); }
             drop(s);
             if let Some(ui) = app_weak.upgrade() {
-                ui.set_right_bottom_tabs(build_tabs(&session.borrow().tabs_right_bottom));
+                ui.set_right_bottom_tabs(build_tabs(session.borrow().tabs(PaneLocation::RightBottom)));
                 let new_len = session.borrow().tabs_right_bottom.len() as i32;
                 if ui.get_active_right_bottom_tab() >= new_len {
                     ui.set_active_right_bottom_tab((new_len - 1).max(0));
@@ -279,9 +210,7 @@ pub fn register<F: Fn() + 'static>(
     });
 
     app.on_right_bottom_tab_activated(make_tab_activated_handler(
-        session.clone(), viewer2d.clone(), panscan_viewer.clone(), app.as_weak(),
-        live_running.clone(), prev_right_bottom_idx.clone(), start_live.clone(),
-        add_demo_camera.clone(), add_sim_camera.clone(), disconnect_all.clone(), PaneLocation::RightBottom,
+        clone_ctx(ctx), app.as_weak(), prev_right_bottom_idx.clone(), PaneLocation::RightBottom,
     ));
 
     // ── Move-tab callbacks ────────────────────────────────────────────────────
@@ -305,27 +234,6 @@ pub fn register<F: Fn() + 'static>(
         }
     });
 
-    app.on_add_pane({
-        let session  = session.clone();
-        let app_weak = app.as_weak();
-        move |area, type_id| {
-            let Some(loc) = area_from_int(area) else { return };
-            let tab = make_tab(type_id);
-            if let Some(tab) = tab { add_tab(&session, &app_weak, tab, loc); }
-        }
-    });
-
-    app.on_add_pane_at_default({
-        let session  = session.clone();
-        let app_weak = app.as_weak();
-        move |type_id| {
-            if let Some(tab) = make_tab(type_id) {
-                let loc = tab.default_location();
-                add_tab(&session, &app_weak, tab, loc);
-            }
-        }
-    });
-
     app.on_move_right_bottom_tab({
         let session  = session.clone();
         let app_weak = app.as_weak();
@@ -336,37 +244,101 @@ pub fn register<F: Fn() + 'static>(
         }
     });
 
+    // ── Add-pane callbacks ────────────────────────────────────────────────────
+    // Build a small owned registry for use in closures
+    let registry: Rc<Vec<Box<dyn TabType>>> = {
+        let v: Vec<Box<dyn TabType>> = tab_types.iter().map(|tt| clone_tab_type(tt.as_ref())).collect();
+        Rc::new(v)
+    };
+
+    app.on_add_pane({
+        let session  = session.clone();
+        let app_weak = app.as_weak();
+        let registry = registry.clone();
+        move |area, type_id| {
+            let Some(loc) = area_from_int(area) else { return };
+            if let Some(tab) = registry.iter().find(|tt| tt.type_id() == type_id).map(|tt| tt.create()) {
+                add_tab(&session, &app_weak, tab, loc);
+            }
+        }
+    });
+
+    app.on_add_pane_at_default({
+        let session  = session.clone();
+        let app_weak = app.as_weak();
+        let registry = registry.clone();
+        move |type_id| {
+            if let Some(tt) = registry.iter().find(|tt| tt.type_id() == type_id) {
+                let loc = tt.default_location();
+                let tab = tt.create();
+                add_tab(&session, &app_weak, tab, loc);
+            }
+        }
+    });
+
     // ── Tab custom-action callbacks ───────────────────────────────────────────
     let make_action_handler = |loc: PaneLocation| {
-        let session         = session.clone();
-        let viewer2d        = viewer2d.clone();
-        let panscan_viewer  = panscan_viewer.clone();
-        let app_weak        = app.as_weak();
-        let live_running    = live_running.clone();
-        let start_live      = start_live.clone();
-        let add_demo_camera = add_demo_camera.clone();
-        let add_sim_camera  = add_sim_camera.clone();
-        let disconnect_all  = disconnect_all.clone();
+        let ctx      = clone_ctx(ctx);
+        let app_weak = app.as_weak();
         move |tab_idx: i32, action_id: i32| {
             if let Some(ui) = app_weak.upgrade() {
-                let ctx = ActivationContext {
-                    session:         session.clone(),
-                    viewer2d:        viewer2d.clone(),
-                    panscan_viewer:  panscan_viewer.clone(),
-                    start_live:      start_live.clone(),
-                    live_running:    live_running.clone(),
+                let act_ctx = ActivationContext {
+                    session:         ctx.session.clone(),
+                    viewer2d:        ctx.viewer2d.clone(),
+                    panscan_viewer:  ctx.panscan_viewer.clone(),
+                    start_live:      ctx.start_live.clone(),
+                    live_running:    ctx.live_running.clone(),
                     tab_idx:         tab_idx as usize,
                     area:            loc,
-                    add_demo_camera: add_demo_camera.clone(),
-                    add_sim_camera:  add_sim_camera.clone(),
-                    disconnect_all:  disconnect_all.clone(),
+                    add_demo_camera: ctx.add_demo_camera.clone(),
+                    add_sim_camera:  ctx.add_sim_camera.clone(),
+                    disconnect_all:  ctx.disconnect_all.clone(),
                 };
-                session.borrow_mut().tabs_mut(loc).get_mut(tab_idx as usize)
-                    .map(|t| t.on_menu_action(action_id, &ui, &ctx));
+                ctx.session.borrow_mut().tabs_mut(loc).get_mut(tab_idx as usize)
+                    .map(|t| t.on_menu_action(action_id, &ui, &act_ctx));
             }
         }
     };
     app.on_tab_action_left(make_action_handler(PaneLocation::Left));
     app.on_tab_action_right_top(make_action_handler(PaneLocation::RightTop));
     app.on_tab_action_right_bottom(make_action_handler(PaneLocation::RightBottom));
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Clone a CallbackCtx (all fields are Rc/Arc so this is cheap).
+fn clone_ctx(ctx: &CallbackCtx) -> CallbackCtx {
+    CallbackCtx {
+        session:            ctx.session.clone(),
+        viewer2d:           ctx.viewer2d.clone(),
+        panscan_viewer:     ctx.panscan_viewer.clone(),
+        cam:                ctx.cam.clone(),
+        live_running:       ctx.live_running.clone(),
+        start_live:         ctx.start_live.clone(),
+        add_demo_camera:    ctx.add_demo_camera.clone(),
+        add_sim_camera:     ctx.add_sim_camera.clone(),
+        disconnect_all:     ctx.disconnect_all.clone(),
+        cwd:                ctx.cwd.clone(),
+        last_camera_frame:  ctx.last_camera_frame.clone(),
+    }
+}
+
+/// Clone a single TabType into a new Box for use in closures.
+fn clone_tab_type(tt: &dyn TabType) -> Box<dyn TabType> {
+    // We need each TabType to be clonable into a Box. Since all our TabType structs
+    // are unit structs, we use type_id-based reconstruction.
+    use crate::panes::*;
+    match tt.type_id() {
+        0 => Box::new(viewer3d::TabTypeViewer3d),
+        1 => Box::new(viewer2d::TabTypeViewer2d),
+        2 => Box::new(camera_view::TabTypeCamera),
+        3 => Box::new(cam_prop::TabTypeCamProp),
+        4 => Box::new(particle_tracking::TabTypeParticleTracking),
+        5 => Box::new(project::TabTypeProject),
+        6 => Box::new(file_browser::TabTypeFileBrowser),
+        7 => Box::new(plots::TabTypePlots),
+        8 => Box::new(help::TabTypeHelp),
+        9 => Box::new(pan_scan::TabTypePanScan),
+        _ => unreachable!("unknown type_id {}", tt.type_id()),
+    }
 }

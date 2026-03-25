@@ -1,0 +1,74 @@
+import { ProjectTreeEntry } from "../types.slint";
+
+export component PaneProject inherits VerticalLayout {
+    in property <[ProjectTreeEntry]> project-tree;
+    in-out property <int> selected-project-id: -1;
+    callback close-project();
+    callback project-tree-selected(int);
+
+    private property <int> sel-row: -1;
+
+    Rectangle {
+        vertical-stretch: 1;
+        background: #000000;
+        clip: true;
+
+        proj-flick := Flickable {
+            width: parent.width - 8px;
+            height: parent.height;
+            viewport-height: proj-entries.preferred-height;
+
+            proj-entries := VerticalLayout {
+                for entry[i] in root.project-tree: Rectangle {
+                    height: 22px;
+                    background: root.sel-row == i ? #1E3A5F : #000000;
+                    row-ta := TouchArea {
+                        clicked => {
+                            root.sel-row = i;
+                            root.project-tree-selected(entry.object-id);
+                            if (entry.indent == 0) {
+                                root.selected-project-id = entry.object-id;
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px + entry.indent * 16px; padding-right: 4px;
+                        Text {
+                            text: entry.label;
+                            color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
+                            font-size: 13px; vertical-alignment: center; overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: parent.width - 6px; width: 6px; height: parent.height;
+            background: #111111;
+            Rectangle {
+                visible: proj-flick.viewport-height > proj-flick.height;
+                width: 4px; x: 1px;
+                y: (-proj-flick.viewport-y / proj-flick.viewport-height) * parent.height;
+                height: max(20px, (proj-flick.height / proj-flick.viewport-height) * parent.height);
+                background: #555555; border-radius: 2px;
+            }
+        }
+    }
+
+    Rectangle {
+        height: 32px;
+        background: #1A1A1A;
+        HorizontalLayout {
+            padding: 4px; spacing: 6px; alignment: start;
+            Rectangle {
+                width: 60px; height: 24px;
+                background: close-btn.has-hover ? #3D3D3D : #2A2A2A;
+                border-radius: 3px;
+                close-btn := TouchArea { clicked => { root.close-project(); } }
+                Text { text: "Close"; color: white; font-size: 12px;
+                       horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+    }
+}

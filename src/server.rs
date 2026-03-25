@@ -13,6 +13,7 @@ use ripp::renderer3d::Renderer3d;
 use ripp::micromanager::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
 use ripp::{AppWindow, DevicePropEntry};
 use ripp::app_logic::AppLogic;
+use ripp::session::{Tab3d, Camera3d};
 use futures::stream;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{WindowAdapter, WindowEvent};
@@ -247,13 +248,11 @@ fn run_render_loop(
         let camera = {
             let s = logic.session.borrow();
             s.tabs_left.iter().find_map(|t| {
-                if let ripp::session::RippTab::Tab3d(t3) = t {
-                    Some(ripp::session::Camera3d {
-                        yaw:      t3.camera.yaw,
-                        pitch:    t3.camera.pitch,
-                        distance: t3.camera.distance,
-                    })
-                } else { None }
+                t.as_any().downcast_ref::<Tab3d>().map(|t3| Camera3d {
+                    yaw:      t3.camera.yaw,
+                    pitch:    t3.camera.pitch,
+                    distance: t3.camera.distance,
+                })
             }).unwrap_or_default()
         };
         let pixels = teapot.render_frame(&camera);

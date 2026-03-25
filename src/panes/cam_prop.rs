@@ -1,6 +1,7 @@
+use std::any::Any;
 use std::sync::{Arc, atomic::AtomicBool};
 use crate::AppWindow;
-use crate::session::{TabCamProp, TabPane, ActivationContext, PaneLocation};
+use crate::session::{TabCamProp, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation};
 
 impl TabPane for TabCamProp {
     fn label(&self)            -> &str         { "Cam prop" }
@@ -23,4 +24,17 @@ impl TabPane for TabCamProp {
             _ => {}
         }
     }
+    fn as_any(&self)         -> &dyn Any     { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+pub struct TabTypeCamProp;
+
+impl TabType for TabTypeCamProp {
+    fn type_id(&self)            -> i32          { 3 }
+    fn label(&self)              -> &str         { "Cam prop" }
+    fn default_location(&self)   -> PaneLocation { PaneLocation::RightTop }
+    fn visible_on_startup(&self) -> bool         { true }
+    fn create(&self)             -> Box<dyn TabPane> { Box::new(TabCamProp) }
+    fn register_callbacks(&self, _app: &AppWindow, _ctx: &CallbackCtx) {}
 }

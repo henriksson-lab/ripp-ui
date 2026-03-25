@@ -1,0 +1,137 @@
+import { FileEntry } from "../types.slint";
+
+export component PaneFileBrowser inherits VerticalLayout {
+    in property <[FileEntry]>  file-list;
+    in-out property <string>   current-path: ".";
+    callback navigate-to(string);
+    callback open-file(string);
+
+    private property <length> size-w: 72px;
+    private property <length> drag: 0;
+    private property <int>    sel-row: -1;
+    private property <bool>   sel-dir: false;
+
+    Rectangle {
+        height: 26px;
+        background: #1E1E1E;
+        HorizontalLayout {
+            padding-left: 4px; padding-right: 4px; spacing: 4px;
+            Rectangle {
+                width: 28px;
+                background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
+                border-radius: 3px;
+                up-btn := TouchArea { clicked => { root.navigate-to(".."); } }
+                Text { text: "↑"; color: #AAAAAA;
+                       horizontal-alignment: center; vertical-alignment: center; }
+            }
+            Text {
+                text: root.current-path; color: #AAAAAA; font-size: 12px;
+                vertical-alignment: center; overflow: elide; horizontal-stretch: 1;
+            }
+        }
+    }
+    Rectangle { height: 1px; background: #333333; }
+
+    Rectangle {
+        height: 20px;
+        background: #000000;
+        HorizontalLayout {
+            padding-left: 24px; padding-right: 4px;
+            Text { text: "Name"; color: #888888; font-size: 11px;
+                   vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            Rectangle {
+                width: 5px; height: parent.height;
+                background: fh.pressed ? #666666 : (fh.has-hover ? #444444 : transparent);
+                fh := TouchArea {
+                    mouse-cursor: col-resize;
+                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.drag = self.mouse-x; } }
+                    moved => { root.size-w = max(40px, root.size-w - (self.mouse-x - root.drag)); }
+                }
+            }
+            Text { text: "Size"; color: #888888; font-size: 11px;
+                   vertical-alignment: center; width: root.size-w; horizontal-alignment: right; }
+        }
+    }
+    Rectangle { height: 1px; background: #2A2A2A; }
+
+    Rectangle {
+        vertical-stretch: 1;
+        background: #000000;
+        clip: true;
+
+        file-flick := Flickable {
+            width: parent.width - 8px;
+            height: parent.height;
+            viewport-height: file-entries.preferred-height;
+
+            file-entries := VerticalLayout {
+                for entry[i] in root.file-list: Rectangle {
+                    height: 22px;
+                    background: root.sel-row == i ? #1E3A5F
+                              : entry-area.has-hover ? #1E1E1E : #000000;
+                    entry-area := TouchArea {
+                        clicked => {
+                            root.sel-row = i;
+                            root.sel-dir = entry.is-dir;
+                            if (entry.is-dir) {
+                                root.sel-row = -1;
+                                root.sel-dir = false;
+                                root.navigate-to(entry.name);
+                            }
+                        }
+                        double-clicked => {
+                            if (!entry.is-dir) { root.open-file(entry.name); }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px; padding-right: 4px; spacing: 4px;
+                        Text { text: entry.is-dir ? "▶" : " "; color: #6699CC;
+                               font-size: 11px; vertical-alignment: center; width: 12px; }
+                        Text { text: entry.name;
+                               color: entry.is-dir ? #9ABFDD : #CCCCCC;
+                               font-size: 13px; vertical-alignment: center;
+                               horizontal-stretch: 1; overflow: elide; }
+                        Text { text: entry.size; color: #777777; font-size: 12px;
+                               vertical-alignment: center; width: root.size-w;
+                               horizontal-alignment: right; }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: parent.width - 6px; width: 6px; height: parent.height;
+            background: #111111;
+            Rectangle {
+                visible: file-flick.viewport-height > file-flick.height;
+                width: 4px; x: 1px;
+                y: (-file-flick.viewport-y / file-flick.viewport-height) * parent.height;
+                height: max(20px, (file-flick.height / file-flick.viewport-height) * parent.height);
+                background: #555555; border-radius: 2px;
+            }
+        }
+    }
+
+    Rectangle {
+        height: 32px;
+        background: #1A1A1A;
+        HorizontalLayout {
+            padding: 4px; spacing: 6px; alignment: start;
+            Rectangle {
+                width: 60px; height: 24px;
+                opacity: root.sel-row >= 0 && !root.sel-dir ? 1.0 : 0.4;
+                background: open-btn.has-hover && root.sel-row >= 0 && !root.sel-dir ? #3D3D3D : #2A2A2A;
+                border-radius: 3px;
+                open-btn := TouchArea {
+                    clicked => {
+                        if (root.sel-row >= 0 && !root.sel-dir) {
+                            root.open-file(root.file-list[root.sel-row].name);
+                        }
+                    }
+                }
+                Text { text: "Open"; color: white; font-size: 12px;
+                       horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+    }
+}

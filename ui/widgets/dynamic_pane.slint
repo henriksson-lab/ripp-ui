@@ -1,6 +1,14 @@
-import { Slider, LineEdit } from "std-widgets.slint";
 import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
-import { RangeSlider } from "range_slider.slint";
+import { PaneViewer3d }         from "../panels/pane_viewer3d.slint";
+import { PaneViewer2d }         from "../panels/pane_viewer2d.slint";
+import { PaneCamera }           from "../panels/pane_camera.slint";
+import { PaneCamProp }          from "../panels/pane_cam_prop.slint";
+import { PaneParticleTracking } from "../panels/pane_particle_tracking.slint";
+import { PaneProject }          from "../panels/pane_project.slint";
+import { PaneFileBrowser }      from "../panels/pane_file_browser.slint";
+import { PanePlots }            from "../panels/pane_plots.slint";
+import { PaneHelp }             from "../panels/pane_help.slint";
+import { PanePanScan }          from "../panels/pane_pan_scan.slint";
 
 export component DynamicPane inherits Rectangle {
     // ── Tab management ────────────────────────────────────────────────────────
@@ -67,8 +75,6 @@ export component DynamicPane inherits Rectangle {
     callback panscan-reset();
     callback panscan-record();
     callback panscan-field-edited(int, string);
-    private property <float> ps-drag-x;
-    private property <float> ps-drag-y;
 
     // ── TabFileBrowser (type_id 6) ────────────────────────────────────────────
     in property <[FileEntry]> file-list;
@@ -81,36 +87,6 @@ export component DynamicPane inherits Rectangle {
     private property <int>    tab-menu-idx: 0;
     private property <length> tab-menu-x: 0;
     private property <bool>   add-menu-open: false;
-
-    // ── Private: Tab3d drag ───────────────────────────────────────────────────
-    private property <float> v3d-drag-x;
-    private property <float> v3d-drag-y;
-
-    // ── Private: Tab2d drag / dropdown ───────────────────────────────────────
-    private property <float>  v2d-drag-x;
-    private property <float>  v2d-drag-y;
-    private property <bool>   v2d-dd-open: false;
-    private property <int>    v2d-dd-row: -1;
-    private property <string> v2d-dd-label: "";
-
-    // ── Private: Camera drag ──────────────────────────────────────────────────
-    private property <float> cam-drag-x;
-    private property <float> cam-drag-y;
-
-    // ── Private: CamProp column resize ───────────────────────────────────────
-    private property <length> dp-col1-w: 100px;
-    private property <length> dp-col3-w: 120px;
-    private property <length> dp-hdrag1: 0;
-    private property <length> dp-hdrag3: 0;
-
-    // ── Private: FileBrowser ─────────────────────────────────────────────────
-    private property <length> fb-size-w: 72px;
-    private property <length> fb-drag: 0;
-    private property <int>    fb-sel-row: -1;
-    private property <bool>   fb-sel-dir: false;
-
-    // ── Private: Project tree ─────────────────────────────────────────────────
-    private property <int>    proj-sel-row: -1;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -194,658 +170,91 @@ export component DynamicPane inherits Rectangle {
             vertical-stretch: 1;
             clip: true;
 
-            // ── 3D View (type_id 0) ───────────────────────────────────────────
-            if root.active-tab-type == 0: Rectangle {
+            if root.active-tab-type == 0: PaneViewer3d {
                 width: 100%; height: 100%;
-                Image {
-                    source: root.teapot-image;
-                    width: 100%; height: 100%;
-                    image-fit: fill;
-                }
-                v3d-ta := TouchArea {
-                    mouse-cursor: crosshair;
-                    pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) {
-                            root.v3d-drag-x = self.mouse-x / 1px;
-                            root.v3d-drag-y = self.mouse-y / 1px;
-                        }
-                    }
-                    moved => {
-                        if (self.pressed) {
-                            root.viewer3d-panned(
-                                self.mouse-x / 1px - root.v3d-drag-x,
-                                self.mouse-y / 1px - root.v3d-drag-y
-                            );
-                            root.v3d-drag-x = self.mouse-x / 1px;
-                            root.v3d-drag-y = self.mouse-y / 1px;
-                        }
-                    }
-                    scroll-event(e) => {
-                        root.viewer3d-scrolled(e.delta-y / 1px);
-                        return EventResult.accept;
-                    }
-                }
+                teapot-image: root.teapot-image;
+                viewer3d-panned(dx, dy) => { root.viewer3d-panned(dx, dy); }
+                viewer3d-scrolled(d)    => { root.viewer3d-scrolled(d); }
             }
 
-            // ── 2D Viewer (type_id 1) ─────────────────────────────────────────
-            if root.active-tab-type == 1: VerticalLayout {
+            if root.active-tab-type == 1: PaneViewer2d {
                 width: 100%; height: 100%;
-
-                HorizontalLayout {
-                    vertical-stretch: 1;
-
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        background: #111111;
-                        if root.viewer2d-image-loaded: Image {
-                            source: root.viewer2d-image;
-                            image-fit: fill;
-                            width: 100%; height: 100%;
-                        }
-                        if !root.viewer2d-image-loaded: Text {
-                            text: "No image selected";
-                            color: #555555; font-size: 14px;
-                            horizontal-alignment: center; vertical-alignment: center;
-                        }
-                        v2d-ta := TouchArea {
-                            mouse-cursor: crosshair;
-                            pointer-event(e) => {
-                                if (e.kind == PointerEventKind.down) {
-                                    root.v2d-drag-x = self.mouse-x / 1px;
-                                    root.v2d-drag-y = self.mouse-y / 1px;
-                                }
-                            }
-                            moved => {
-                                if (self.pressed) {
-                                    root.viewer2d-panned(
-                                        self.mouse-x / 1px - root.v2d-drag-x,
-                                        self.mouse-y / 1px - root.v2d-drag-y
-                                    );
-                                    root.v2d-drag-x = self.mouse-x / 1px;
-                                    root.v2d-drag-y = self.mouse-y / 1px;
-                                }
-                            }
-                            scroll-event(e) => {
-                                root.viewer2d-scrolled(e.delta-y / 1px);
-                                return EventResult.accept;
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: 20px;
-                        background: #111111;
-                        Slider {
-                            width: 20px; height: parent.height;
-                            orientation: vertical;
-                            minimum: 0; maximum: root.viewer2d-z-max;
-                            value <=> root.viewer2d-z;
-                            enabled: root.viewer2d-z-max > 0;
-                            changed(v) => { root.viewer2d-z-changed(v); }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 28px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding-left: 6px; padding-right: 6px;
-                        padding-top: 4px;  padding-bottom: 4px;
-                        RangeSlider {
-                            horizontal-stretch: 1;
-                            minimum: 0.0; maximum: 255.0;
-                            lo <=> root.viewer2d-lo;
-                            hi <=> root.viewer2d-hi;
-                            changed(l, h) => { root.viewer2d-settings-changed(); }
-                        }
-                    }
-                }
-
-                if root.v2d-dd-open: Rectangle {
-                    height: min(200px, v2d-dd-entries.preferred-height);
-                    background: #1E1E1E;
-                    border-width: 1px;
-                    border-color: #444444;
-                    clip: true;
-
-                    v2d-flick := Flickable {
-                        width: parent.width; height: parent.height;
-                        viewport-height: v2d-dd-entries.preferred-height;
-
-                        v2d-dd-entries := VerticalLayout {
-                            for entry[i] in root.project-tree: Rectangle {
-                                height: 22px;
-                                background: v2d-row-ta.has-hover ? #2A3A4A
-                                          : root.v2d-dd-row == i ? #1E3A5F : #1E1E1E;
-                                v2d-row-ta := TouchArea {
-                                    clicked => {
-                                        root.v2d-dd-row = i;
-                                        root.v2d-dd-label = entry.label;
-                                        root.v2d-dd-open = false;
-                                        root.viewer2d-object-selected(entry.project-id, entry.object-id);
-                                    }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 8px + entry.indent * 16px;
-                                    padding-right: 4px;
-                                    Text {
-                                        text: entry.label;
-                                        color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                        font-size: 12px;
-                                        vertical-alignment: center;
-                                        overflow: elide;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 32px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding: 4px;
-                        Rectangle {
-                            horizontal-stretch: 1; height: 24px;
-                            background: v2d-dd-btn.has-hover ? #3A3A3A : #2A2A2A;
-                            border-radius: 3px;
-                            v2d-dd-btn := TouchArea {
-                                clicked => { root.v2d-dd-open = !root.v2d-dd-open; }
-                            }
-                            HorizontalLayout {
-                                padding-left: 8px; padding-right: 8px;
-                                Text {
-                                    text: root.v2d-dd-label == "" ? "Select object..." : root.v2d-dd-label;
-                                    color: root.v2d-dd-label == "" ? #666666 : #CCCCCC;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                                Text { text: "▼"; color: #888888; font-size: 10px; vertical-alignment: center; }
-                            }
-                        }
-                    }
-                }
+                viewer2d-image        <=> root.viewer2d-image;
+                viewer2d-image-loaded <=> root.viewer2d-image-loaded;
+                viewer2d-lo           <=> root.viewer2d-lo;
+                viewer2d-hi           <=> root.viewer2d-hi;
+                viewer2d-z            <=> root.viewer2d-z;
+                viewer2d-z-max        <=> root.viewer2d-z-max;
+                project-tree:             root.project-tree;
+                viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
+                viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
+                viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
+                viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
+                viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
             }
 
-            // ── Camera (type_id 2) ────────────────────────────────────────────
-            if root.active-tab-type == 2: VerticalLayout {
+            if root.active-tab-type == 2: PaneCamera {
                 width: 100%; height: 100%;
-
-                Rectangle {
-                    vertical-stretch: 1;
-                    Image {
-                        source: root.camera-image;
-                        image-fit: contain;
-                        width: 100%; height: 100%;
-                    }
-                    cam-ta := TouchArea {
-                        mouse-cursor: crosshair;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.cam-drag-x = self.mouse-x / 1px;
-                                root.cam-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        moved => {
-                            if (self.pressed) {
-                                root.camera-panned(
-                                    self.mouse-x / 1px - root.cam-drag-x,
-                                    self.mouse-y / 1px - root.cam-drag-y
-                                );
-                                root.cam-drag-x = self.mouse-x / 1px;
-                                root.cam-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        scroll-event(e) => {
-                            root.camera-scrolled(e.delta-y / 1px);
-                            return EventResult.accept;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 32px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding: 4px; spacing: 6px; alignment: start;
-                        Rectangle {
-                            width: 60px; height: 24px;
-                            background: snap-btn.has-hover ? #3D3D3D : #2A2A2A;
-                            border-radius: 3px;
-                            snap-btn := TouchArea { clicked => { root.snap-requested(); } }
-                            Text { text: "Snap"; color: white; font-size: 12px;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                        Rectangle {
-                            width: 60px; height: 24px;
-                            background: live-btn.has-hover ? #3D3D3D : #2A2A2A;
-                            border-radius: 3px;
-                            border-width: root.live-snap ? 1px : 0px;
-                            border-color: #6699CC;
-                            live-btn := TouchArea {
-                                clicked => {
-                                    root.live-snap = !root.live-snap;
-                                    root.live-toggled(root.live-snap);
-                                }
-                            }
-                            Text { text: "Live"; font-size: 12px;
-                                   color: root.live-snap ? #9ABFDD : white;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 28px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding-left: 6px; padding-right: 6px;
-                        padding-top: 4px;  padding-bottom: 4px;
-                        RangeSlider {
-                            horizontal-stretch: 1;
-                            minimum: 0.0; maximum: 255.0;
-                            lo <=> root.camera-lo;
-                            hi <=> root.camera-hi;
-                            changed(l, h) => { root.camera-settings-changed(); }
-                        }
-                    }
-                }
+                camera-image <=> root.camera-image;
+                live-snap    <=> root.live-snap;
+                camera-lo    <=> root.camera-lo;
+                camera-hi    <=> root.camera-hi;
+                snap-requested()            => { root.snap-requested(); }
+                live-toggled(v)             => { root.live-toggled(v); }
+                camera-panned(dx, dy)       => { root.camera-panned(dx, dy); }
+                camera-scrolled(d)          => { root.camera-scrolled(d); }
+                camera-settings-changed()   => { root.camera-settings-changed(); }
             }
 
-            // ── CamProp (type_id 3) ───────────────────────────────────────────
-            if root.active-tab-type == 3: VerticalLayout {
+            if root.active-tab-type == 3: PaneCamProp {
                 width: 100%; height: 100%;
-
-                Rectangle {
-                    height: 20px;
-                    background: #000000;
-                    HorizontalLayout {
-                        padding-left: 4px; padding-right: 4px;
-                        Text { text: "Device";   color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col1-w; overflow: elide; }
-                        Rectangle {
-                            width: 5px; height: parent.height;
-                            background: dph1.pressed ? #666666 : (dph1.has-hover ? #444444 : transparent);
-                            dph1 := TouchArea {
-                                mouse-cursor: col-resize;
-                                pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-hdrag1 = self.mouse-x; } }
-                                moved => { root.dp-col1-w = max(40px, root.dp-col1-w + self.mouse-x - root.dp-hdrag1); }
-                            }
-                        }
-                        Text { text: "Property"; color: #888888; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                        Rectangle {
-                            width: 5px; height: parent.height;
-                            background: dph3.pressed ? #666666 : (dph3.has-hover ? #444444 : transparent);
-                            dph3 := TouchArea {
-                                mouse-cursor: col-resize;
-                                pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.dp-hdrag3 = self.mouse-x; } }
-                                moved => { root.dp-col3-w = max(40px, root.dp-col3-w - (self.mouse-x - root.dp-hdrag3)); }
-                            }
-                        }
-                        Text { text: "Value";    color: #888888; font-size: 11px; vertical-alignment: center; width: root.dp-col3-w; overflow: elide; }
-                    }
-                }
-                Rectangle { height: 1px; background: #2A2A2A; }
-
-                Rectangle {
-                    vertical-stretch: 1;
-                    background: #000000;
-                    clip: true;
-
-                    prop-flick := Flickable {
-                        width: parent.width - 8px;
-                        height: parent.height;
-                        viewport-height: prop-entries.preferred-height;
-
-                        prop-entries := VerticalLayout {
-                            for entry in root.device-props: Rectangle {
-                                height: 22px;
-                                background: prop-row.has-hover ? #1E1E1E : #000000;
-                                prop-row := TouchArea {}
-                                HorizontalLayout {
-                                    padding-left: 4px; padding-right: 4px; spacing: 0px;
-                                    Text { text: entry.device;   color: #6699CC; font-size: 12px; vertical-alignment: center; width: root.dp-col1-w; overflow: elide; }
-                                    Rectangle { width: 5px; }
-                                    Text { text: entry.property; color: #CCCCCC; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                                    Rectangle { width: 5px; }
-                                    Text { text: entry.value;    color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: root.dp-col3-w; overflow: elide; }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        x: parent.width - 6px; width: 6px; height: parent.height;
-                        background: #111111;
-                        Rectangle {
-                            visible: prop-flick.viewport-height > prop-flick.height;
-                            width: 4px; x: 1px;
-                            y: (-prop-flick.viewport-y / prop-flick.viewport-height) * parent.height;
-                            height: max(20px, (prop-flick.height / prop-flick.viewport-height) * parent.height);
-                            background: #555555; border-radius: 2px;
-                        }
-                    }
-                }
+                device-props: root.device-props;
             }
 
-            // ── ParticleTracking (type_id 4) ──────────────────────────────────
-            if root.active-tab-type == 4: VerticalLayout {
+            if root.active-tab-type == 4: PaneParticleTracking {
                 width: 100%; height: 100%;
-                alignment: center;
-                Text { text: "Particle tracking"; color: #555555; font-size: 13px; horizontal-alignment: center; }
             }
 
-            // ── Project (type_id 5) ───────────────────────────────────────────
-            if root.active-tab-type == 5: VerticalLayout {
+            if root.active-tab-type == 5: PaneProject {
                 width: 100%; height: 100%;
-
-                Rectangle {
-                    vertical-stretch: 1;
-                    background: #000000;
-                    clip: true;
-
-                    proj-flick := Flickable {
-                        width: parent.width - 8px;
-                        height: parent.height;
-                        viewport-height: proj-entries.preferred-height;
-
-                        proj-entries := VerticalLayout {
-                            for entry[i] in root.project-tree: Rectangle {
-                                height: 22px;
-                                background: root.proj-sel-row == i ? #1E3A5F : #000000;
-                                row-ta := TouchArea {
-                                    clicked => {
-                                        root.proj-sel-row = i;
-                                        root.project-tree-selected(entry.object-id);
-                                        if (entry.indent == 0) {
-                                            root.selected-project-id = entry.object-id;
-                                        }
-                                    }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 8px + entry.indent * 16px; padding-right: 4px;
-                                    Text {
-                                        text: entry.label;
-                                        color: entry.indent == 0 ? #9ABFDD : #CCCCCC;
-                                        font-size: 13px; vertical-alignment: center; overflow: elide;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        x: parent.width - 6px; width: 6px; height: parent.height;
-                        background: #111111;
-                        Rectangle {
-                            visible: proj-flick.viewport-height > proj-flick.height;
-                            width: 4px; x: 1px;
-                            y: (-proj-flick.viewport-y / proj-flick.viewport-height) * parent.height;
-                            height: max(20px, (proj-flick.height / proj-flick.viewport-height) * parent.height);
-                            background: #555555; border-radius: 2px;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 32px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding: 4px; spacing: 6px; alignment: start;
-                        Rectangle {
-                            width: 60px; height: 24px;
-                            background: close-proj-btn.has-hover ? #3D3D3D : #2A2A2A;
-                            border-radius: 3px;
-                            close-proj-btn := TouchArea { clicked => { root.close-project(); } }
-                            Text { text: "Close"; color: white; font-size: 12px;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                    }
-                }
+                project-tree:          root.project-tree;
+                selected-project-id <=> root.selected-project-id;
+                close-project()              => { root.close-project(); }
+                project-tree-selected(id)    => { root.project-tree-selected(id); }
             }
 
-            // ── FileBrowser (type_id 6) ───────────────────────────────────────
-            if root.active-tab-type == 6: VerticalLayout {
+            if root.active-tab-type == 6: PaneFileBrowser {
                 width: 100%; height: 100%;
-
-                Rectangle {
-                    height: 26px;
-                    background: #1E1E1E;
-                    HorizontalLayout {
-                        padding-left: 4px; padding-right: 4px; spacing: 4px;
-                        Rectangle {
-                            width: 28px;
-                            background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
-                            border-radius: 3px;
-                            up-btn := TouchArea { clicked => { root.navigate-to(".."); } }
-                            Text { text: "↑"; color: #AAAAAA;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                        Text {
-                            text: root.current-path; color: #AAAAAA; font-size: 12px;
-                            vertical-alignment: center; overflow: elide; horizontal-stretch: 1;
-                        }
-                    }
-                }
-                Rectangle { height: 1px; background: #333333; }
-
-                Rectangle {
-                    height: 20px;
-                    background: #000000;
-                    HorizontalLayout {
-                        padding-left: 24px; padding-right: 4px;
-                        Text { text: "Name"; color: #888888; font-size: 11px;
-                               vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                        Rectangle {
-                            width: 5px; height: parent.height;
-                            background: fh.pressed ? #666666 : (fh.has-hover ? #444444 : transparent);
-                            fh := TouchArea {
-                                mouse-cursor: col-resize;
-                                pointer-event(e) => { if (e.kind == PointerEventKind.down) { root.fb-drag = self.mouse-x; } }
-                                moved => { root.fb-size-w = max(40px, root.fb-size-w - (self.mouse-x - root.fb-drag)); }
-                            }
-                        }
-                        Text { text: "Size"; color: #888888; font-size: 11px;
-                               vertical-alignment: center; width: root.fb-size-w; horizontal-alignment: right; }
-                    }
-                }
-                Rectangle { height: 1px; background: #2A2A2A; }
-
-                Rectangle {
-                    vertical-stretch: 1;
-                    background: #000000;
-                    clip: true;
-
-                    file-flick := Flickable {
-                        width: parent.width - 8px;
-                        height: parent.height;
-                        viewport-height: file-entries.preferred-height;
-
-                        file-entries := VerticalLayout {
-                            for entry[i] in root.file-list: Rectangle {
-                                height: 22px;
-                                background: root.fb-sel-row == i ? #1E3A5F
-                                          : entry-area.has-hover ? #1E1E1E : #000000;
-                                entry-area := TouchArea {
-                                    clicked => {
-                                        root.fb-sel-row = i;
-                                        root.fb-sel-dir = entry.is-dir;
-                                        if (entry.is-dir) {
-                                            root.fb-sel-row = -1;
-                                            root.fb-sel-dir = false;
-                                            root.navigate-to(entry.name);
-                                        }
-                                    }
-                                    double-clicked => {
-                                        if (!entry.is-dir) { root.open-file(entry.name); }
-                                    }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 8px; padding-right: 4px; spacing: 4px;
-                                    Text { text: entry.is-dir ? "▶" : " "; color: #6699CC;
-                                           font-size: 11px; vertical-alignment: center; width: 12px; }
-                                    Text { text: entry.name;
-                                           color: entry.is-dir ? #9ABFDD : #CCCCCC;
-                                           font-size: 13px; vertical-alignment: center;
-                                           horizontal-stretch: 1; overflow: elide; }
-                                    Text { text: entry.size; color: #777777; font-size: 12px;
-                                           vertical-alignment: center; width: root.fb-size-w;
-                                           horizontal-alignment: right; }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        x: parent.width - 6px; width: 6px; height: parent.height;
-                        background: #111111;
-                        Rectangle {
-                            visible: file-flick.viewport-height > file-flick.height;
-                            width: 4px; x: 1px;
-                            y: (-file-flick.viewport-y / file-flick.viewport-height) * parent.height;
-                            height: max(20px, (file-flick.height / file-flick.viewport-height) * parent.height);
-                            background: #555555; border-radius: 2px;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 32px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding: 4px; spacing: 6px; alignment: start;
-                        Rectangle {
-                            width: 60px; height: 24px;
-                            opacity: root.fb-sel-row >= 0 && !root.fb-sel-dir ? 1.0 : 0.4;
-                            background: open-btn.has-hover && root.fb-sel-row >= 0 && !root.fb-sel-dir ? #3D3D3D : #2A2A2A;
-                            border-radius: 3px;
-                            open-btn := TouchArea {
-                                clicked => {
-                                    if (root.fb-sel-row >= 0 && !root.fb-sel-dir) {
-                                        root.open-file(root.file-list[root.fb-sel-row].name);
-                                    }
-                                }
-                            }
-                            Text { text: "Open"; color: white; font-size: 12px;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                    }
-                }
+                file-list:       root.file-list;
+                current-path  <=> root.current-path;
+                navigate-to(p)   => { root.navigate-to(p); }
+                open-file(f)     => { root.open-file(f); }
             }
 
-            // ── Plots placeholder (type_id 7) ─────────────────────────────────
-            if root.active-tab-type == 7: Rectangle {
+            if root.active-tab-type == 7: PanePlots {
                 width: 100%; height: 100%;
-                background: #111111;
             }
 
-            // ── Help placeholder (type_id 8) ──────────────────────────────────
-            if root.active-tab-type == 8: Rectangle {
+            if root.active-tab-type == 8: PaneHelp {
                 width: 100%; height: 100%;
-                background: #111111;
             }
 
-            // ── Panorama scan (type_id 9) ──────────────────────────────────────
-            if root.active-tab-type == 9: VerticalLayout {
+            if root.active-tab-type == 9: PanePanScan {
                 width: 100%; height: 100%;
-
-                Rectangle {
-                    vertical-stretch: 1;
-                    background: #111111;
-                    Image {
-                        source: root.panscan-image;
-                        image-fit: fill;
-                        width: 100%; height: 100%;
-                    }
-                    ps-ta := TouchArea {
-                        mouse-cursor: crosshair;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.ps-drag-x = self.mouse-x / 1px;
-                                root.ps-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        moved => {
-                            if (self.pressed) {
-                                root.panscan-panned(
-                                    self.mouse-x / 1px - root.ps-drag-x,
-                                    self.mouse-y / 1px - root.ps-drag-y
-                                );
-                                root.ps-drag-x = self.mouse-x / 1px;
-                                root.ps-drag-y = self.mouse-y / 1px;
-                            }
-                        }
-                        scroll-event(e) => {
-                            root.panscan-scrolled(e.delta-y / 1px);
-                            return EventResult.accept;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 28px;
-                    background: #1A1A1A;
-                    HorizontalLayout {
-                        padding-left: 6px; padding-right: 6px;
-                        padding-top: 4px;  padding-bottom: 4px;
-                        RangeSlider {
-                            horizontal-stretch: 1;
-                            minimum: 0.0; maximum: 255.0;
-                            lo <=> root.panscan-lo;
-                            hi <=> root.panscan-hi;
-                            changed(l, h) => { root.panscan-settings-changed(); }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    background: #1A1A1A;
-                    VerticalLayout {
-                        padding: 6px; spacing: 4px;
-                        HorizontalLayout { spacing: 6px; height: 24px;
-                            Text { text: "Min X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-x; font-size: 12px;
-                                       edited(t) => { root.panscan-field-edited(0, t); } }
-                            Text { text: "Max X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-x; font-size: 12px;
-                                       edited(t) => { root.panscan-field-edited(1, t); } }
-                        }
-                        HorizontalLayout { spacing: 6px; height: 24px;
-                            Text { text: "Min Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-y; font-size: 12px;
-                                       edited(t) => { root.panscan-field-edited(2, t); } }
-                            Text { text: "Max Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                            LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-y; font-size: 12px;
-                                       edited(t) => { root.panscan-field-edited(3, t); } }
-                        }
-                        HorizontalLayout { spacing: 6px; height: 24px;
-                            Rectangle {
-                                width: 90px; height: 24px; border-radius: 3px;
-                                background: sc-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                sc-btn := TouchArea { clicked => { root.panscan-set-corner(); } }
-                                Text { text: "Set corner"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            Rectangle {
-                                width: 60px; height: 24px; border-radius: 3px;
-                                background: rst-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                rst-btn := TouchArea { clicked => { root.panscan-reset(); } }
-                                Text { text: "Reset"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            Rectangle {
-                                width: 130px; height: 24px; border-radius: 3px;
-                                background: rec-btn.has-hover ? #3D3D3D : #2A2A2A;
-                                rec-btn := TouchArea { clicked => { root.panscan-record(); } }
-                                Text { text: "Record panorama"; color: white; font-size: 12px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                        }
-                    }
-                }
+                panscan-image <=> root.panscan-image;
+                panscan-lo    <=> root.panscan-lo;
+                panscan-hi    <=> root.panscan-hi;
+                panscan-min-x <=> root.panscan-min-x;
+                panscan-max-x <=> root.panscan-max-x;
+                panscan-min-y <=> root.panscan-min-y;
+                panscan-max-y <=> root.panscan-max-y;
+                panscan-panned(dx, dy)       => { root.panscan-panned(dx, dy); }
+                panscan-scrolled(d)          => { root.panscan-scrolled(d); }
+                panscan-settings-changed()   => { root.panscan-settings-changed(); }
+                panscan-set-corner()         => { root.panscan-set-corner(); }
+                panscan-reset()              => { root.panscan-reset(); }
+                panscan-record()             => { root.panscan-record(); }
+                panscan-field-edited(f, t)   => { root.panscan-field-edited(f, t); }
             }
         }
     }
