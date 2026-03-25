@@ -134,7 +134,19 @@ fn main() {
     });
 
     // ── Teapot rendering timer ────────────────────────────────────────────────
-    let mut renderer = Renderer3d::new(TEAPOT_W, TEAPOT_H);
+    // The renderer is shared with on_viewer3d_resized so it can be resized
+    // directly from the Slint layout callback — no AppWindow property needed.
+    let renderer = Rc::new(std::cell::RefCell::new(Renderer3d::new(TEAPOT_W, TEAPOT_H)));
+
+    app.on_viewer3d_resized({
+        let renderer = renderer.clone();
+        move |w, h| {
+            if w > 0.0 && h > 0.0 {
+                renderer.borrow_mut().resize(w as u32, h as u32);
+            }
+        }
+    });
+
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -158,10 +170,11 @@ fn main() {
                         None => return,
                     }
                 };
-                let vw = ui.get_viewer3d_viewport_w().max(1) as u32;
-                let vh = ui.get_viewer3d_viewport_h().max(1) as u32;
-                renderer.resize(vw, vh);
-                let pixels = renderer.render_frame(&camera);
+                let (pixels, vw, vh) = {
+                    let r = renderer.borrow();
+                    let s = r.size();
+                    (r.render_frame(&camera), s.w, s.h)
+                };
                 let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(vw, vh);
                 pb.make_mut_bytes().copy_from_slice(&pixels);
                 ui.set_teapot_image(slint::Image::from_rgba8(pb));

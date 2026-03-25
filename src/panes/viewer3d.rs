@@ -2,7 +2,8 @@ use std::any::Any;
 use slint::ComponentHandle;
 use crate::AppWindow;
 use std::sync::{Arc, atomic::AtomicBool};
-use crate::session::{Tab3d, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation};
+use crate::session::{Tab3d, Camera3d, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation};
+use crate::renderer3d::bounding_sphere_radius;
 
 impl TabPane for Tab3d {
     fn label(&self)            -> &str         { "3D View" }
@@ -21,8 +22,12 @@ impl TabType for TabTypeViewer3d {
     fn label(&self)              -> &str         { "3D View" }
     fn default_location(&self)   -> PaneLocation { PaneLocation::Left }
     fn visible_on_startup(&self) -> bool         { true }
-    fn create(&self)             -> Box<dyn TabPane> {
-        Box::new(Tab3d { camera: crate::session::Camera3d::default() })
+    fn create(&self) -> Box<dyn TabPane> {
+        // Fit the bounding sphere in the vertical FOV (π/4 rad = 45°).
+        let r   = bounding_sphere_radius("assets/teapot.obj");
+        let fov_half = std::f32::consts::FRAC_PI_4 / 2.0; // half of 45°
+        let distance = (r / fov_half.sin()) * 1.1;        // +10% margin
+        Box::new(Tab3d { camera: Camera3d { yaw: 0.0, pitch: 0.3, distance } })
     }
     fn register_callbacks(&self, app: &AppWindow, ctx: &CallbackCtx) {
         let session  = ctx.session.clone();
@@ -40,16 +45,6 @@ impl TabType for TabTypeViewer3d {
                             t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
                         }
                     }
-                }
-            }
-        });
-
-        app.on_viewer3d_resized({
-            let app_weak = app.as_weak();
-            move |w, h| {
-                if let Some(ui) = app_weak.upgrade() {
-                    ui.set_viewer3d_viewport_w(w as i32);
-                    ui.set_viewer3d_viewport_h(h as i32);
                 }
             }
         });

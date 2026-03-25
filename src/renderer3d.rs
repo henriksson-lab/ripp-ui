@@ -36,6 +36,25 @@ pub struct Renderer3d {
     index_count: u32,
 }
 
+/// Compute the radius of the smallest sphere centred at the origin that contains
+/// every vertex in the OBJ file.  This is used to set the initial camera distance.
+pub fn bounding_sphere_radius(path: &str) -> f32 {
+    let (models, _) = tobj::load_obj(
+        path,
+        &tobj::LoadOptions { triangulate: false, ..Default::default() },
+    )
+    .expect("failed to load OBJ for bounding sphere");
+    let mut r2_max = 0.0_f32;
+    for m in &models {
+        let pos = &m.mesh.positions;
+        for i in (0..pos.len()).step_by(3) {
+            let r2 = pos[i] * pos[i] + pos[i+1] * pos[i+1] + pos[i+2] * pos[i+2];
+            if r2 > r2_max { r2_max = r2; }
+        }
+    }
+    r2_max.sqrt()
+}
+
 impl Renderer3d {
     pub fn new(w: u32, h: u32) -> Self {
         futures::executor::block_on(Self::new_async(WindowSize { w, h }))
