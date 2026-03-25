@@ -2,7 +2,7 @@ use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
 use slint::ComponentHandle;
-use crate::{AppWindow, DevicePropEntry};
+use crate::{AppWindow, CameraGlobal, CamPropGlobal, DevicePropEntry};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::session::{TabCamera, ColorMappingRange, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation};
 use crate::micromanager::CameraImage;
@@ -16,9 +16,9 @@ impl TabPane for TabCamera {
         live_running.store(false, Ordering::SeqCst);
     }
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
-        ui.set_live_snap(self.live);
-        ui.set_camera_lo(self.color.lo);
-        ui.set_camera_hi(self.color.hi);
+        ui.global::<CameraGlobal>().set_live_snap(self.live);
+        ui.global::<CameraGlobal>().set_camera_lo(self.color.lo);
+        ui.global::<CameraGlobal>().set_camera_hi(self.color.hi);
         if self.live { (ctx.start_live)(); }
     }
     fn as_any(&self)         -> &dyn Any     { self }
@@ -43,22 +43,25 @@ impl TabType for TabTypeCamera {
         // ── Initial state ─────────────────────────────────────────────────────
         let snap = cam.snap();
         *last_camera_frame.lock().unwrap() = Some((snap.data.clone(), snap.width, snap.height));
-        app.set_camera_image(snap.to_slint_image(ColorMappingRange::default()));
+        app.global::<CameraGlobal>().set_camera_image(snap.to_slint_image(ColorMappingRange::default()));
 
         let rows: Vec<DevicePropEntry> = cam.device_props().into_iter().map(|p| {
             DevicePropEntry { device: p.device.into(), property: p.property.into(), value: p.value.into() }
         }).collect();
-        app.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+        app.global::<CamPropGlobal>().set_device_props(Rc::new(slint::VecModel::from(rows)).into());
 
         // ── Callbacks ─────────────────────────────────────────────────────────
-        app.on_camera_settings_changed({
+        app.global::<CameraGlobal>().on_camera_settings_changed({
             let session  = session.clone();
             let lcf      = last_camera_frame.clone();
             let app_weak = app.as_weak();
             move || {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_camera_lo(), hi: ui.get_camera_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<CameraGlobal>().get_camera_lo(),
+                        hi: ui.global::<CameraGlobal>().get_camera_hi(),
+                    };
                     {
                         let mut s = session.borrow_mut();
                         if let Some(t) = s.tabs_left.get_mut(tab_idx) {
@@ -69,7 +72,7 @@ impl TabType for TabTypeCamera {
                     }
                     if let Some((ref data, w, h)) = *lcf.lock().unwrap() {
                         let img = CameraImage { data: data.clone(), width: w, height: h };
-                        ui.set_camera_image(img.to_slint_image(color));
+                        ui.global::<CameraGlobal>().set_camera_image(img.to_slint_image(color));
                     }
                 }
             }

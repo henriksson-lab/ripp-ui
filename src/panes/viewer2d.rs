@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 use slint::ComponentHandle;
-use crate::AppWindow;
+use crate::{AppWindow, Viewer2dGlobal};
 use std::sync::{Arc, atomic::AtomicBool};
 use crate::session::{RippSession, Tab2d, ProjectData, Camera2d, ColorMappingRange, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation, find_object_ref, find_object_mut};
 use crate::renderer2d::Viewer2dRenderer;
@@ -41,8 +41,8 @@ pub fn render(viewer2d: &Viewer2dRenderer, cam: Camera2d, color: ColorMappingRan
         let sz = viewer2d.size();
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sz.w, sz.h);
         pb.make_mut_bytes().copy_from_slice(&pixels);
-        ui.set_viewer2d_image(slint::Image::from_rgba8(pb));
-        ui.set_viewer2d_image_loaded(true);
+        ui.global::<Viewer2dGlobal>().set_viewer2d_image(slint::Image::from_rgba8(pb));
+        ui.global::<Viewer2dGlobal>().set_viewer2d_image_loaded(true);
     }
 }
 
@@ -54,12 +54,12 @@ impl TabPane for Tab2d {
     fn default_location(&self) -> PaneLocation { PaneLocation::Left }
     fn on_deactivating(&mut self, _: &Arc<AtomicBool>) {}
     fn on_activated(&self, ui: &AppWindow, ctx: &ActivationContext) {
-        ui.set_viewer2d_lo(self.color.lo);
-        ui.set_viewer2d_hi(self.color.hi);
-        ui.set_viewer2d_z(self.camera.z as f32);
-        ui.set_viewer2d_z_max(self.z_max as f32);
+        ui.global::<Viewer2dGlobal>().set_viewer2d_lo(self.color.lo);
+        ui.global::<Viewer2dGlobal>().set_viewer2d_hi(self.color.hi);
+        ui.global::<Viewer2dGlobal>().set_viewer2d_z(self.camera.z as f32);
+        ui.global::<Viewer2dGlobal>().set_viewer2d_z_max(self.z_max as f32);
         if self.selected_proj_id < 0 {
-            ui.set_viewer2d_image_loaded(false);
+            ui.global::<Viewer2dGlobal>().set_viewer2d_image_loaded(false);
         } else {
             upload(&ctx.session, &mut ctx.viewer2d.borrow_mut(),
                    self.selected_proj_id as u32, self.selected_obj_id as u32,
@@ -87,7 +87,7 @@ impl TabType for TabTypeViewer2d {
         let session  = ctx.session.clone();
         let viewer2d = ctx.viewer2d.clone();
 
-        app.on_viewer2d_object_selected({
+        app.global::<Viewer2dGlobal>().on_viewer2d_object_selected({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
@@ -120,9 +120,12 @@ impl TabType for TabTypeViewer2d {
                             }
                         }
                     }
-                    ui.set_viewer2d_z(0.0);
-                    ui.set_viewer2d_z_max(z_max as f32);
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    ui.global::<Viewer2dGlobal>().set_viewer2d_z(0.0);
+                    ui.global::<Viewer2dGlobal>().set_viewer2d_z_max(z_max as f32);
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     upload(&session, &mut viewer2d.borrow_mut(),
                            project_id as u32, object_id as u32, 0);
                     render(&viewer2d.borrow(),
@@ -132,14 +135,17 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
-        app.on_viewer2d_panned({
+        app.global::<Viewer2dGlobal>().on_viewer2d_panned({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
             move |dx, dy| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         if let Some(t) = s.tabs_left.get_mut(tab_idx) {
@@ -157,14 +163,17 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
-        app.on_viewer2d_scrolled({
+        app.global::<Viewer2dGlobal>().on_viewer2d_scrolled({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
             move |delta| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         if let Some(t) = s.tabs_left.get_mut(tab_idx) {
@@ -182,14 +191,17 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
-        app.on_viewer2d_settings_changed({
+        app.global::<Viewer2dGlobal>().on_viewer2d_settings_changed({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
             move || {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         if let Some(t) = s.tabs_left.get_mut(tab_idx) {
@@ -206,7 +218,7 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
-        app.on_viewer2d_resized({
+        app.global::<Viewer2dGlobal>().on_viewer2d_resized({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
@@ -215,7 +227,10 @@ impl TabType for TabTypeViewer2d {
                 viewer2d.borrow_mut().resize(w as u32, h as u32);
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     let cam = {
                         let s = session.borrow();
                         s.tabs_left.get(tab_idx)
@@ -229,14 +244,17 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
-        app.on_viewer2d_z_changed({
+        app.global::<Viewer2dGlobal>().on_viewer2d_z_changed({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();
             let app_weak = app.as_weak();
             move |z| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<Viewer2dGlobal>().get_viewer2d_lo(),
+                        hi: ui.global::<Viewer2dGlobal>().get_viewer2d_hi(),
+                    };
                     let info = {
                         let mut s = session.borrow_mut();
                         if let Some(t) = s.tabs_left.get_mut(tab_idx) {

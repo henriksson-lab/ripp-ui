@@ -1,68 +1,14 @@
-import { DynamicPane }   from "../widgets/dynamic_pane.slint";
-import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
+import { DynamicPane }  from "../widgets/dynamic_pane.slint";
+import { LeftTabEntry } from "../types.slint";
 
 export component LeftPane inherits Rectangle {
-    // Tab data
     in-out property <[LeftTabEntry]> left-tabs;
     in-out property <int>   active-left-tab: 0;
 
-    // All content data (forwarded to DynamicPane)
-    in property <image> teapot-image;
-    in property <image> camera-image;
-    in property <image> viewer2d-image;
-    in-out property <bool>  viewer2d-image-loaded: false;
-    in-out property <float> viewer2d-lo: 0.0;
-    in-out property <float> viewer2d-hi: 255.0;
-    in-out property <float> viewer2d-z: 0;
-    in-out property <float> viewer2d-z-max: 0;
-    in-out property <bool>  live-snap: false;
-    in-out property <float> camera-lo: 0.0;
-    in-out property <float> camera-hi: 255.0;
-    in property <[ProjectTreeEntry]> project-tree;
-    in property <[DevicePropEntry]>  device-props;
-    in property <[FileEntry]>        file-list;
-    in-out property <string>         current-path: ".";
-    in-out property <int>            selected-project-id: -1;
-
-    // Panorama scan
-    in property <image>  panscan-image;
-    in-out property <float>  panscan-lo: 0.0;
-    in-out property <float>  panscan-hi: 255.0;
-    in-out property <string> panscan-min-x: "";
-    in-out property <string> panscan-max-x: "";
-    in-out property <string> panscan-min-y: "";
-    in-out property <string> panscan-max-y: "";
-    callback panscan-panned(float, float);
-    callback panscan-scrolled(float);
-    callback panscan-settings-changed();
-    callback panscan-set-corner();
-    callback panscan-reset();
-    callback panscan-record();
-    callback panscan-field-edited(int, string);
-
-    // Callbacks
     callback close-left-tab(int);
     callback move-left-tab(int, int);
     callback add-pane(int, int);
     callback tab-action-left(int, int);
-    callback viewer3d-panned(float, float);
-    callback viewer3d-scrolled(float);
-    callback viewer3d-resized(float, float);
-    callback viewer2d-panned(float, float);
-    callback viewer2d-scrolled(float);
-    callback viewer2d-settings-changed();
-    callback viewer2d-z-changed(float);
-    callback viewer2d-object-selected(int, int);
-    callback viewer2d-resized(float, float);
-    callback snap-requested();
-    callback live-toggled(bool);
-    callback camera-panned(float, float);
-    callback camera-scrolled(float);
-    callback camera-settings-changed();
-    callback close-project();
-    callback project-tree-selected(int);
-    callback navigate-to(string);
-    callback open-file(string);
 
     DynamicPane {
         width: 100%; height: 100%;
@@ -70,59 +16,9 @@ export component LeftPane inherits Rectangle {
         active-tab  <=> root.active-left-tab;
         current-area: 0;
 
-        teapot-image             <=> root.teapot-image;
-        camera-image             <=> root.camera-image;
-        viewer2d-image           <=> root.viewer2d-image;
-        viewer2d-image-loaded    <=> root.viewer2d-image-loaded;
-        viewer2d-lo              <=> root.viewer2d-lo;
-        viewer2d-hi              <=> root.viewer2d-hi;
-        viewer2d-z               <=> root.viewer2d-z;
-        viewer2d-z-max           <=> root.viewer2d-z-max;
-        live-snap                <=> root.live-snap;
-        camera-lo                <=> root.camera-lo;
-        camera-hi                <=> root.camera-hi;
-        project-tree:               root.project-tree;
-        device-props:               root.device-props;
-        file-list:                  root.file-list;
-        current-path             <=> root.current-path;
-        selected-project-id      <=> root.selected-project-id;
-
-        panscan-image            <=> root.panscan-image;
-        panscan-lo               <=> root.panscan-lo;
-        panscan-hi               <=> root.panscan-hi;
-        panscan-min-x            <=> root.panscan-min-x;
-        panscan-max-x            <=> root.panscan-max-x;
-        panscan-min-y            <=> root.panscan-min-y;
-        panscan-max-y            <=> root.panscan-max-y;
-        panscan-panned(dx, dy)          => { root.panscan-panned(dx, dy); }
-        panscan-scrolled(d)             => { root.panscan-scrolled(d); }
-        panscan-settings-changed()      => { root.panscan-settings-changed(); }
-        panscan-set-corner()            => { root.panscan-set-corner(); }
-        panscan-reset()                 => { root.panscan-reset(); }
-        panscan-record()                => { root.panscan-record(); }
-        panscan-field-edited(f, t)      => { root.panscan-field-edited(f, t); }
-
-        close-tab(i)                   => { root.close-left-tab(i); }
-        move-tab(i, t)                 => { root.move-left-tab(i, t); }
-        add-pane(a, t)                 => { root.add-pane(a, t); }
-        tab-action(i, a)               => { root.tab-action-left(i, a); }
-        viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
-        viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
-        viewer3d-resized(w, h)         => { root.viewer3d-resized(w, h); }
-        viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
-        viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
-        viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
-        viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
-        viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
-        viewer2d-resized(w, h)         => { root.viewer2d-resized(w, h); }
-        snap-requested()               => { root.snap-requested(); }
-        live-toggled(v)                => { root.live-toggled(v); }
-        camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }
-        camera-scrolled(d)             => { root.camera-scrolled(d); }
-        camera-settings-changed()      => { root.camera-settings-changed(); }
-        close-project()                => { root.close-project(); }
-        project-tree-selected(id)      => { root.project-tree-selected(id); }
-        navigate-to(p)                 => { root.navigate-to(p); }
-        open-file(f)                   => { root.open-file(f); }
+        close-tab(i)       => { root.close-left-tab(i); }
+        move-tab(i, t)     => { root.move-left-tab(i, t); }
+        add-pane(a, t)     => { root.add-pane(a, t); }
+        tab-action(i, a)   => { root.tab-action-left(i, a); }
     }
 }

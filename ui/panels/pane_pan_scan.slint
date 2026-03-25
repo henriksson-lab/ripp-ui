@@ -1,7 +1,6 @@
 import { LineEdit } from "std-widgets.slint";
 import { RangeSlider } from "../widgets/range_slider.slint";
-
-export component PanePanScan inherits VerticalLayout {
+export global PanScanGlobal {
     in property <image>  panscan-image;
     in-out property <float>  panscan-lo: 0.0;
     in-out property <float>  panscan-hi: 255.0;
@@ -16,7 +15,9 @@ export component PanePanScan inherits VerticalLayout {
     callback panscan-reset();
     callback panscan-record();
     callback panscan-field-edited(int, string);
+}
 
+export component PanePanScan inherits VerticalLayout {
     private property <float> drag-x;
     private property <float> drag-y;
 
@@ -24,7 +25,7 @@ export component PanePanScan inherits VerticalLayout {
         vertical-stretch: 1;
         background: #111111;
         Image {
-            source: root.panscan-image;
+            source: PanScanGlobal.panscan-image;
             image-fit: fill;
             width: 100%; height: 100%;
         }
@@ -38,7 +39,7 @@ export component PanePanScan inherits VerticalLayout {
             }
             moved => {
                 if (self.pressed) {
-                    root.panscan-panned(
+                    PanScanGlobal.panscan-panned(
                         self.mouse-x / 1px - root.drag-x,
                         self.mouse-y / 1px - root.drag-y
                     );
@@ -47,7 +48,7 @@ export component PanePanScan inherits VerticalLayout {
                 }
             }
             scroll-event(e) => {
-                root.panscan-scrolled(e.delta-y / 1px);
+                PanScanGlobal.panscan-scrolled(e.delta-y / 1px);
                 return EventResult.accept;
             }
         }
@@ -62,9 +63,9 @@ export component PanePanScan inherits VerticalLayout {
             RangeSlider {
                 horizontal-stretch: 1;
                 minimum: 0.0; maximum: 255.0;
-                lo <=> root.panscan-lo;
-                hi <=> root.panscan-hi;
-                changed(l, h) => { root.panscan-settings-changed(); }
+                lo <=> PanScanGlobal.panscan-lo;
+                hi <=> PanScanGlobal.panscan-hi;
+                changed(l, h) => { PanScanGlobal.panscan-settings-changed(); }
             }
         }
     }
@@ -75,39 +76,39 @@ export component PanePanScan inherits VerticalLayout {
             padding: 6px; spacing: 4px;
             HorizontalLayout { spacing: 6px; height: 24px;
                 Text { text: "Min X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-x; font-size: 12px;
-                           edited(t) => { root.panscan-field-edited(0, t); } }
+                LineEdit { horizontal-stretch: 1; text <=> PanScanGlobal.panscan-min-x; font-size: 12px;
+                           edited(t) => { PanScanGlobal.panscan-field-edited(0, t); } }
                 Text { text: "Max X"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-x; font-size: 12px;
-                           edited(t) => { root.panscan-field-edited(1, t); } }
+                LineEdit { horizontal-stretch: 1; text <=> PanScanGlobal.panscan-max-x; font-size: 12px;
+                           edited(t) => { PanScanGlobal.panscan-field-edited(1, t); } }
             }
             HorizontalLayout { spacing: 6px; height: 24px;
                 Text { text: "Min Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                LineEdit { horizontal-stretch: 1; text <=> root.panscan-min-y; font-size: 12px;
-                           edited(t) => { root.panscan-field-edited(2, t); } }
+                LineEdit { horizontal-stretch: 1; text <=> PanScanGlobal.panscan-min-y; font-size: 12px;
+                           edited(t) => { PanScanGlobal.panscan-field-edited(2, t); } }
                 Text { text: "Max Y"; color: #AAAAAA; font-size: 12px; vertical-alignment: center; width: 44px; }
-                LineEdit { horizontal-stretch: 1; text <=> root.panscan-max-y; font-size: 12px;
-                           edited(t) => { root.panscan-field-edited(3, t); } }
+                LineEdit { horizontal-stretch: 1; text <=> PanScanGlobal.panscan-max-y; font-size: 12px;
+                           edited(t) => { PanScanGlobal.panscan-field-edited(3, t); } }
             }
             HorizontalLayout { spacing: 6px; height: 24px;
                 Rectangle {
                     width: 90px; height: 24px; border-radius: 3px;
                     background: sc-btn.has-hover ? #3D3D3D : #2A2A2A;
-                    sc-btn := TouchArea { clicked => { root.panscan-set-corner(); } }
+                    sc-btn := TouchArea { clicked => { PanScanGlobal.panscan-set-corner(); } }
                     Text { text: "Set corner"; color: white; font-size: 12px;
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Rectangle {
                     width: 60px; height: 24px; border-radius: 3px;
                     background: rst-btn.has-hover ? #3D3D3D : #2A2A2A;
-                    rst-btn := TouchArea { clicked => { root.panscan-reset(); } }
+                    rst-btn := TouchArea { clicked => { PanScanGlobal.panscan-reset(); } }
                     Text { text: "Reset"; color: white; font-size: 12px;
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Rectangle {
                     width: 130px; height: 24px; border-radius: 3px;
                     background: rec-btn.has-hover ? #3D3D3D : #2A2A2A;
-                    rec-btn := TouchArea { clicked => { root.panscan-record(); } }
+                    rec-btn := TouchArea { clicked => { PanScanGlobal.panscan-record(); } }
                     Text { text: "Record panorama"; color: white; font-size: 12px;
                            horizontal-alignment: center; vertical-alignment: center; }
                 }

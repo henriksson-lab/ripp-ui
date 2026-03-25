@@ -1,6 +1,6 @@
 use std::any::Any;
 use slint::ComponentHandle;
-use crate::AppWindow;
+use crate::{AppWindow, Viewer3dGlobal};
 use std::sync::{Arc, atomic::AtomicBool};
 use crate::session::{Tab3d, Camera3d, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation};
 use crate::renderer3d::bounding_sphere_radius;
@@ -32,7 +32,7 @@ impl TabType for TabTypeViewer3d {
     fn register_callbacks(&self, app: &AppWindow, ctx: &CallbackCtx) {
         let session  = ctx.session.clone();
         let app_weak = app.as_weak();
-        app.on_viewer3d_panned({
+        app.global::<Viewer3dGlobal>().on_viewer3d_panned({
             let session  = session.clone();
             let app_weak = app_weak.clone();
             move |dx, dy| {
@@ -42,14 +42,14 @@ impl TabType for TabTypeViewer3d {
                     if let Some(t) = s.tabs_left.get_mut(tab_idx) {
                         if let Some(t3) = t.as_any_mut().downcast_mut::<Tab3d>() {
                             t3.camera.yaw   -= dx * 0.005;
-                            t3.camera.pitch  = (t3.camera.pitch + dy * 0.005).clamp(-1.5, 1.5);
+                            t3.camera.pitch  = (t3.camera.pitch + dy * 0.005_f32).clamp(-1.5, 1.5);
                         }
                     }
                 }
             }
         });
 
-        app.on_viewer3d_scrolled({
+        app.global::<Viewer3dGlobal>().on_viewer3d_scrolled({
             move |delta| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;

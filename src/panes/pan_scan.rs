@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::sync::{Arc, atomic::AtomicBool};
 use slint::ComponentHandle;
-use crate::AppWindow;
+use crate::{AppWindow, PanScanGlobal};
 use crate::session::{
     TabPanScan, Camera2d, ColorMappingRange,
     TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation,
@@ -24,7 +24,7 @@ fn render_panscan(panscan_viewer: &Viewer2dRenderer, cam: Camera2d, color: Color
         let sz = panscan_viewer.size();
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sz.w, sz.h);
         pb.make_mut_bytes().copy_from_slice(&pixels);
-        ui.set_panscan_image(slint::Image::from_rgba8(pb));
+        ui.global::<PanScanGlobal>().set_panscan_image(slint::Image::from_rgba8(pb));
     }
 }
 
@@ -39,12 +39,12 @@ impl TabPane for TabPanScan {
         if !self.uploaded {
             ctx.panscan_viewer.borrow_mut().upload(&make_sin_image(), 512, 512, true);
         }
-        ui.set_panscan_lo(self.color.lo);
-        ui.set_panscan_hi(self.color.hi);
-        ui.set_panscan_min_x(self.min_x.clone().into());
-        ui.set_panscan_max_x(self.max_x.clone().into());
-        ui.set_panscan_min_y(self.min_y.clone().into());
-        ui.set_panscan_max_y(self.max_y.clone().into());
+        ui.global::<PanScanGlobal>().set_panscan_lo(self.color.lo);
+        ui.global::<PanScanGlobal>().set_panscan_hi(self.color.hi);
+        ui.global::<PanScanGlobal>().set_panscan_min_x(self.min_x.clone().into());
+        ui.global::<PanScanGlobal>().set_panscan_max_x(self.max_x.clone().into());
+        ui.global::<PanScanGlobal>().set_panscan_min_y(self.min_y.clone().into());
+        ui.global::<PanScanGlobal>().set_panscan_max_y(self.max_y.clone().into());
         render_panscan(&ctx.panscan_viewer.borrow(),
                        Camera2d { x: self.camera.x, y: self.camera.y, zoom: self.camera.zoom },
                        self.color, ui);
@@ -77,14 +77,17 @@ impl TabType for TabTypePanScan {
             for t in &mut s.tabs_right_bottom { if let Some(ps) = t.as_any_mut().downcast_mut::<TabPanScan>() { ps.uploaded = true; } }
         }
 
-        app.on_panscan_panned({
+        app.global::<PanScanGlobal>().on_panscan_panned({
             let session        = session.clone();
             let panscan_viewer = panscan_viewer.clone();
             let app_weak       = app.as_weak();
             move |dx, dy| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_panscan_lo(), hi: ui.get_panscan_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<PanScanGlobal>().get_panscan_lo(),
+                        hi: ui.global::<PanScanGlobal>().get_panscan_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         s.tabs_left.get_mut(tab_idx)
@@ -102,14 +105,17 @@ impl TabType for TabTypePanScan {
             }
         });
 
-        app.on_panscan_scrolled({
+        app.global::<PanScanGlobal>().on_panscan_scrolled({
             let session        = session.clone();
             let panscan_viewer = panscan_viewer.clone();
             let app_weak       = app.as_weak();
             move |delta| {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_panscan_lo(), hi: ui.get_panscan_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<PanScanGlobal>().get_panscan_lo(),
+                        hi: ui.global::<PanScanGlobal>().get_panscan_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         s.tabs_left.get_mut(tab_idx)
@@ -127,14 +133,17 @@ impl TabType for TabTypePanScan {
             }
         });
 
-        app.on_panscan_settings_changed({
+        app.global::<PanScanGlobal>().on_panscan_settings_changed({
             let session        = session.clone();
             let panscan_viewer = panscan_viewer.clone();
             let app_weak       = app.as_weak();
             move || {
                 if let Some(ui) = app_weak.upgrade() {
                     let tab_idx = ui.get_active_left_tab() as usize;
-                    let color = ColorMappingRange { lo: ui.get_panscan_lo(), hi: ui.get_panscan_hi() };
+                    let color = ColorMappingRange {
+                        lo: ui.global::<PanScanGlobal>().get_panscan_lo(),
+                        hi: ui.global::<PanScanGlobal>().get_panscan_hi(),
+                    };
                     let cam = {
                         let mut s = session.borrow_mut();
                         s.tabs_left.get_mut(tab_idx)
@@ -151,7 +160,7 @@ impl TabType for TabTypePanScan {
             }
         });
 
-        app.on_panscan_field_edited({
+        app.global::<PanScanGlobal>().on_panscan_field_edited({
             let session  = session.clone();
             let app_weak = app.as_weak();
             move |field, text| {
@@ -174,7 +183,7 @@ impl TabType for TabTypePanScan {
             }
         });
 
-        app.on_panscan_set_corner({
+        app.global::<PanScanGlobal>().on_panscan_set_corner({
             let session  = session.clone();
             let app_weak = app.as_weak();
             let cam      = cam.clone();
@@ -204,15 +213,15 @@ impl TabType for TabTypePanScan {
                             t.max_y = s_max_y.clone();
                         }
                     }
-                    ui.set_panscan_min_x(s_min_x.into());
-                    ui.set_panscan_max_x(s_max_x.into());
-                    ui.set_panscan_min_y(s_min_y.into());
-                    ui.set_panscan_max_y(s_max_y.into());
+                    ui.global::<PanScanGlobal>().set_panscan_min_x(s_min_x.into());
+                    ui.global::<PanScanGlobal>().set_panscan_max_x(s_max_x.into());
+                    ui.global::<PanScanGlobal>().set_panscan_min_y(s_min_y.into());
+                    ui.global::<PanScanGlobal>().set_panscan_max_y(s_max_y.into());
                 }
             }
         });
 
-        app.on_panscan_reset({
+        app.global::<PanScanGlobal>().on_panscan_reset({
             let session  = session.clone();
             let app_weak = app.as_weak();
             move || {
@@ -227,15 +236,15 @@ impl TabType for TabTypePanScan {
                             t.min_y.clear(); t.max_y.clear();
                         }
                     }
-                    ui.set_panscan_min_x("".into());
-                    ui.set_panscan_max_x("".into());
-                    ui.set_panscan_min_y("".into());
-                    ui.set_panscan_max_y("".into());
+                    ui.global::<PanScanGlobal>().set_panscan_min_x("".into());
+                    ui.global::<PanScanGlobal>().set_panscan_max_x("".into());
+                    ui.global::<PanScanGlobal>().set_panscan_min_y("".into());
+                    ui.global::<PanScanGlobal>().set_panscan_max_y("".into());
                 }
             }
         });
 
-        app.on_panscan_record(|| {});
+        app.global::<PanScanGlobal>().on_panscan_record(|| {});
     }
 }
 

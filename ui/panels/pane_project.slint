@@ -1,11 +1,13 @@
 import { ProjectTreeEntry } from "../types.slint";
 
-export component PaneProject inherits VerticalLayout {
+export global ProjectGlobal {
     in property <[ProjectTreeEntry]> project-tree;
     in-out property <int> selected-project-id: -1;
     callback close-project();
     callback project-tree-selected(int);
+}
 
+export component PaneProject inherits VerticalLayout {
     private property <int> sel-row: -1;
 
     Rectangle {
@@ -19,15 +21,15 @@ export component PaneProject inherits VerticalLayout {
             viewport-height: proj-entries.preferred-height;
 
             proj-entries := VerticalLayout {
-                for entry[i] in root.project-tree: Rectangle {
+                for entry[i] in ProjectGlobal.project-tree: Rectangle {
                     height: 22px;
                     background: root.sel-row == i ? #1E3A5F : #000000;
                     row-ta := TouchArea {
                         clicked => {
                             root.sel-row = i;
-                            root.project-tree-selected(entry.object-id);
+                            ProjectGlobal.project-tree-selected(entry.object-id);
                             if (entry.indent == 0) {
-                                root.selected-project-id = entry.object-id;
+                                ProjectGlobal.selected-project-id = entry.object-id;
                             }
                         }
                     }
@@ -65,7 +67,7 @@ export component PaneProject inherits VerticalLayout {
                 width: 60px; height: 24px;
                 background: close-btn.has-hover ? #3D3D3D : #2A2A2A;
                 border-radius: 3px;
-                close-btn := TouchArea { clicked => { root.close-project(); } }
+                close-btn := TouchArea { clicked => { ProjectGlobal.close-project(); } }
                 Text { text: "Close"; color: white; font-size: 12px;
                        horizontal-alignment: center; vertical-alignment: center; }
             }

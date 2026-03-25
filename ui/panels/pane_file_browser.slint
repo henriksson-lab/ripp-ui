@@ -1,11 +1,13 @@
 import { FileEntry } from "../types.slint";
 
-export component PaneFileBrowser inherits VerticalLayout {
-    in property <[FileEntry]>  file-list;
-    in-out property <string>   current-path: ".";
+export global FileBrowserGlobal {
+    in property <[FileEntry]> file-list;
+    in-out property <string> current-path: ".";
     callback navigate-to(string);
     callback open-file(string);
+}
 
+export component PaneFileBrowser inherits VerticalLayout {
     private property <length> size-w: 72px;
     private property <length> drag: 0;
     private property <int>    sel-row: -1;
@@ -20,12 +22,12 @@ export component PaneFileBrowser inherits VerticalLayout {
                 width: 28px;
                 background: up-btn.has-hover ? #3A3A3A : #2A2A2A;
                 border-radius: 3px;
-                up-btn := TouchArea { clicked => { root.navigate-to(".."); } }
+                up-btn := TouchArea { clicked => { FileBrowserGlobal.navigate-to(".."); } }
                 Text { text: "↑"; color: #AAAAAA;
                        horizontal-alignment: center; vertical-alignment: center; }
             }
             Text {
-                text: root.current-path; color: #AAAAAA; font-size: 12px;
+                text: FileBrowserGlobal.current-path; color: #AAAAAA; font-size: 12px;
                 vertical-alignment: center; overflow: elide; horizontal-stretch: 1;
             }
         }
@@ -65,7 +67,7 @@ export component PaneFileBrowser inherits VerticalLayout {
             viewport-height: file-entries.preferred-height;
 
             file-entries := VerticalLayout {
-                for entry[i] in root.file-list: Rectangle {
+                for entry[i] in FileBrowserGlobal.file-list: Rectangle {
                     height: 22px;
                     background: root.sel-row == i ? #1E3A5F
                               : entry-area.has-hover ? #1E1E1E : #000000;
@@ -76,11 +78,11 @@ export component PaneFileBrowser inherits VerticalLayout {
                             if (entry.is-dir) {
                                 root.sel-row = -1;
                                 root.sel-dir = false;
-                                root.navigate-to(entry.name);
+                                FileBrowserGlobal.navigate-to(entry.name);
                             }
                         }
                         double-clicked => {
-                            if (!entry.is-dir) { root.open-file(entry.name); }
+                            if (!entry.is-dir) { FileBrowserGlobal.open-file(entry.name); }
                         }
                     }
                     HorizontalLayout {
@@ -125,7 +127,7 @@ export component PaneFileBrowser inherits VerticalLayout {
                 open-btn := TouchArea {
                     clicked => {
                         if (root.sel-row >= 0 && !root.sel-dir) {
-                            root.open-file(root.file-list[root.sel-row].name);
+                            FileBrowserGlobal.open-file(FileBrowserGlobal.file-list[root.sel-row].name);
                         }
                     }
                 }

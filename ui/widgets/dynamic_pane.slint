@@ -1,4 +1,4 @@
-import { LeftTabEntry, DevicePropEntry, ProjectTreeEntry, FileEntry } from "../types.slint";
+import { LeftTabEntry } from "../types.slint";
 import { PaneViewer3d }         from "../panels/pane_viewer3d.slint";
 import { PaneViewer2d }         from "../panels/pane_viewer2d.slint";
 import { PaneCamera }           from "../panels/pane_camera.slint";
@@ -21,68 +21,6 @@ export component DynamicPane inherits Rectangle {
     callback move-tab(int, int);    // (tab_idx, target_area)
     callback add-pane(int, int);    // (area, type_id)
     callback tab-action(int, int);  // (tab_idx, action_id)
-
-    // ── Tab3d (type_id 0) ─────────────────────────────────────────────────────
-    in property <image> teapot-image;
-    callback viewer3d-panned(float, float);
-    callback viewer3d-scrolled(float);
-    callback viewer3d-resized(float, float);
-
-    // ── Tab2d (type_id 1) ─────────────────────────────────────────────────────
-    in property <image> viewer2d-image;
-    in-out property <bool>  viewer2d-image-loaded: false;
-    in-out property <float> viewer2d-lo: 0.0;
-    in-out property <float> viewer2d-hi: 255.0;
-    in-out property <float> viewer2d-z: 0;
-    in-out property <float> viewer2d-z-max: 0;
-    in property <[ProjectTreeEntry]> project-tree;
-    callback viewer2d-panned(float, float);
-    callback viewer2d-scrolled(float);
-    callback viewer2d-settings-changed();
-    callback viewer2d-z-changed(float);
-    callback viewer2d-object-selected(int, int);
-    callback viewer2d-resized(float, float);
-
-    // ── TabCamera (type_id 2) ─────────────────────────────────────────────────
-    in property <image> camera-image;
-    in-out property <bool>  live-snap: false;
-    in-out property <float> camera-lo: 0.0;
-    in-out property <float> camera-hi: 255.0;
-    callback snap-requested();
-    callback live-toggled(bool);
-    callback camera-panned(float, float);
-    callback camera-scrolled(float);
-    callback camera-settings-changed();
-
-    // ── TabCamProp (type_id 3) ────────────────────────────────────────────────
-    in property <[DevicePropEntry]> device-props;
-
-    // ── TabProject (type_id 5) ────────────────────────────────────────────────
-    in-out property <int> selected-project-id: -1;
-    callback close-project();
-    callback project-tree-selected(int);
-
-    // ── TabPanScan (type_id 9) ────────────────────────────────────────────────
-    in property <image> panscan-image;
-    in-out property <float>  panscan-lo: 0.0;
-    in-out property <float>  panscan-hi: 255.0;
-    in-out property <string> panscan-min-x: "";
-    in-out property <string> panscan-max-x: "";
-    in-out property <string> panscan-min-y: "";
-    in-out property <string> panscan-max-y: "";
-    callback panscan-panned(float, float);
-    callback panscan-scrolled(float);
-    callback panscan-settings-changed();
-    callback panscan-set-corner();
-    callback panscan-reset();
-    callback panscan-record();
-    callback panscan-field-edited(int, string);
-
-    // ── TabFileBrowser (type_id 6) ────────────────────────────────────────────
-    in property <[FileEntry]> file-list;
-    in-out property <string> current-path: ".";
-    callback navigate-to(string);
-    callback open-file(string);
 
     // ── Private: tab context menu ─────────────────────────────────────────────
     private property <bool>   tab-menu-open: false;
@@ -172,94 +110,16 @@ export component DynamicPane inherits Rectangle {
             vertical-stretch: 1;
             clip: true;
 
-            if root.active-tab-type == 0: PaneViewer3d {
-                width: 100%; height: 100%;
-                teapot-image: root.teapot-image;
-                viewer3d-panned(dx, dy) => { root.viewer3d-panned(dx, dy); }
-                viewer3d-scrolled(d)    => { root.viewer3d-scrolled(d); }
-                viewer3d-resized(w, h)  => { root.viewer3d-resized(w, h); }
-            }
-
-            if root.active-tab-type == 1: PaneViewer2d {
-                width: 100%; height: 100%;
-                viewer2d-image        <=> root.viewer2d-image;
-                viewer2d-image-loaded <=> root.viewer2d-image-loaded;
-                viewer2d-lo           <=> root.viewer2d-lo;
-                viewer2d-hi           <=> root.viewer2d-hi;
-                viewer2d-z            <=> root.viewer2d-z;
-                viewer2d-z-max        <=> root.viewer2d-z-max;
-                project-tree:             root.project-tree;
-                viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
-                viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
-                viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
-                viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
-                viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
-                viewer2d-resized(w, h)         => { root.viewer2d-resized(w, h); }
-            }
-
-            if root.active-tab-type == 2: PaneCamera {
-                width: 100%; height: 100%;
-                camera-image <=> root.camera-image;
-                live-snap    <=> root.live-snap;
-                camera-lo    <=> root.camera-lo;
-                camera-hi    <=> root.camera-hi;
-                snap-requested()            => { root.snap-requested(); }
-                live-toggled(v)             => { root.live-toggled(v); }
-                camera-panned(dx, dy)       => { root.camera-panned(dx, dy); }
-                camera-scrolled(d)          => { root.camera-scrolled(d); }
-                camera-settings-changed()   => { root.camera-settings-changed(); }
-            }
-
-            if root.active-tab-type == 3: PaneCamProp {
-                width: 100%; height: 100%;
-                device-props: root.device-props;
-            }
-
-            if root.active-tab-type == 4: PaneParticleTracking {
-                width: 100%; height: 100%;
-            }
-
-            if root.active-tab-type == 5: PaneProject {
-                width: 100%; height: 100%;
-                project-tree:          root.project-tree;
-                selected-project-id <=> root.selected-project-id;
-                close-project()              => { root.close-project(); }
-                project-tree-selected(id)    => { root.project-tree-selected(id); }
-            }
-
-            if root.active-tab-type == 6: PaneFileBrowser {
-                width: 100%; height: 100%;
-                file-list:       root.file-list;
-                current-path  <=> root.current-path;
-                navigate-to(p)   => { root.navigate-to(p); }
-                open-file(f)     => { root.open-file(f); }
-            }
-
-            if root.active-tab-type == 7: PanePlots {
-                width: 100%; height: 100%;
-            }
-
-            if root.active-tab-type == 8: PaneHelp {
-                width: 100%; height: 100%;
-            }
-
-            if root.active-tab-type == 9: PanePanScan {
-                width: 100%; height: 100%;
-                panscan-image <=> root.panscan-image;
-                panscan-lo    <=> root.panscan-lo;
-                panscan-hi    <=> root.panscan-hi;
-                panscan-min-x <=> root.panscan-min-x;
-                panscan-max-x <=> root.panscan-max-x;
-                panscan-min-y <=> root.panscan-min-y;
-                panscan-max-y <=> root.panscan-max-y;
-                panscan-panned(dx, dy)       => { root.panscan-panned(dx, dy); }
-                panscan-scrolled(d)          => { root.panscan-scrolled(d); }
-                panscan-settings-changed()   => { root.panscan-settings-changed(); }
-                panscan-set-corner()         => { root.panscan-set-corner(); }
-                panscan-reset()              => { root.panscan-reset(); }
-                panscan-record()             => { root.panscan-record(); }
-                panscan-field-edited(f, t)   => { root.panscan-field-edited(f, t); }
-            }
+            if root.active-tab-type == 0: PaneViewer3d  { width: 100%; height: 100%; }
+            if root.active-tab-type == 1: PaneViewer2d  { width: 100%; height: 100%; }
+            if root.active-tab-type == 2: PaneCamera    { width: 100%; height: 100%; }
+            if root.active-tab-type == 3: PaneCamProp   { width: 100%; height: 100%; }
+            if root.active-tab-type == 4: PaneParticleTracking { width: 100%; height: 100%; }
+            if root.active-tab-type == 5: PaneProject   { width: 100%; height: 100%; }
+            if root.active-tab-type == 6: PaneFileBrowser { width: 100%; height: 100%; }
+            if root.active-tab-type == 7: PanePlots     { width: 100%; height: 100%; }
+            if root.active-tab-type == 8: PaneHelp      { width: 100%; height: 100%; }
+            if root.active-tab-type == 9: PanePanScan   { width: 100%; height: 100%; }
         }
     }
 

@@ -1,18 +1,20 @@
-export component PaneViewer3d inherits Rectangle {
+export global Viewer3dGlobal {
     in property <image> teapot-image;
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
     callback viewer3d-resized(float, float);
+}
 
+export component PaneViewer3d inherits Rectangle {
     private property <float> drag-x;
     private property <float> drag-y;
     private property <float> cur-w: self.width / 1px;
     private property <float> cur-h: self.height / 1px;
-    changed cur-w => { root.viewer3d-resized(root.cur-w, root.cur-h); }
-    changed cur-h => { root.viewer3d-resized(root.cur-w, root.cur-h); }
+    changed cur-w => { Viewer3dGlobal.viewer3d-resized(self.cur-w, self.cur-h); }
+    changed cur-h => { Viewer3dGlobal.viewer3d-resized(self.cur-w, self.cur-h); }
 
     Image {
-        source: root.teapot-image;
+        source: Viewer3dGlobal.teapot-image;
         width: 100%; height: 100%;
         image-fit: fill;
     }
@@ -26,7 +28,7 @@ export component PaneViewer3d inherits Rectangle {
         }
         moved => {
             if (self.pressed) {
-                root.viewer3d-panned(
+                Viewer3dGlobal.viewer3d-panned(
                     self.mouse-x / 1px - root.drag-x,
                     self.mouse-y / 1px - root.drag-y
                 );
@@ -35,7 +37,7 @@ export component PaneViewer3d inherits Rectangle {
             }
         }
         scroll-event(e) => {
-            root.viewer3d-scrolled(e.delta-y / 1px);
+            Viewer3dGlobal.viewer3d-scrolled(e.delta-y / 1px);
             return EventResult.accept;
         }
     }

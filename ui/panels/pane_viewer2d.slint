@@ -1,22 +1,24 @@
 import { Slider } from "std-widgets.slint";
 import { ProjectTreeEntry } from "../types.slint";
 import { RangeSlider } from "../widgets/range_slider.slint";
+import { ProjectGlobal }  from "pane_project.slint";
 
-export component PaneViewer2d inherits VerticalLayout {
+export global Viewer2dGlobal {
     in property <image> viewer2d-image;
     in-out property <bool>  viewer2d-image-loaded: false;
     in-out property <float> viewer2d-lo: 0.0;
     in-out property <float> viewer2d-hi: 255.0;
     in-out property <float> viewer2d-z: 0;
     in-out property <float> viewer2d-z-max: 0;
-    in property <[ProjectTreeEntry]> project-tree;
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
     callback viewer2d-settings-changed();
     callback viewer2d-z-changed(float);
     callback viewer2d-object-selected(int, int);
     callback viewer2d-resized(float, float);
+}
 
+export component PaneViewer2d inherits VerticalLayout {
     private property <float>  drag-x;
     private property <float>  drag-y;
     private property <bool>   dd-open: false;
@@ -24,8 +26,8 @@ export component PaneViewer2d inherits VerticalLayout {
     private property <string> dd-label: "";
     private property <float>  cur-w: img-rect.width / 1px;
     private property <float>  cur-h: img-rect.height / 1px;
-    changed cur-w => { root.viewer2d-resized(root.cur-w, root.cur-h); }
-    changed cur-h => { root.viewer2d-resized(root.cur-w, root.cur-h); }
+    changed cur-w => { Viewer2dGlobal.viewer2d-resized(self.cur-w, self.cur-h); }
+    changed cur-h => { Viewer2dGlobal.viewer2d-resized(self.cur-w, self.cur-h); }
 
     HorizontalLayout {
         vertical-stretch: 1;
@@ -33,12 +35,12 @@ export component PaneViewer2d inherits VerticalLayout {
         img-rect := Rectangle {
             horizontal-stretch: 1;
             background: #111111;
-            if root.viewer2d-image-loaded: Image {
-                source: root.viewer2d-image;
+            if Viewer2dGlobal.viewer2d-image-loaded: Image {
+                source: Viewer2dGlobal.viewer2d-image;
                 image-fit: fill;
                 width: 100%; height: 100%;
             }
-            if !root.viewer2d-image-loaded: Text {
+            if !Viewer2dGlobal.viewer2d-image-loaded: Text {
                 text: "No image selected";
                 color: #555555; font-size: 14px;
                 horizontal-alignment: center; vertical-alignment: center;
@@ -53,7 +55,7 @@ export component PaneViewer2d inherits VerticalLayout {
                 }
                 moved => {
                     if (self.pressed) {
-                        root.viewer2d-panned(
+                        Viewer2dGlobal.viewer2d-panned(
                             self.mouse-x / 1px - root.drag-x,
                             self.mouse-y / 1px - root.drag-y
                         );
@@ -62,7 +64,7 @@ export component PaneViewer2d inherits VerticalLayout {
                     }
                 }
                 scroll-event(e) => {
-                    root.viewer2d-scrolled(e.delta-y / 1px);
+                    Viewer2dGlobal.viewer2d-scrolled(e.delta-y / 1px);
                     return EventResult.accept;
                 }
             }
@@ -74,10 +76,10 @@ export component PaneViewer2d inherits VerticalLayout {
             Slider {
                 width: 20px; height: parent.height;
                 orientation: vertical;
-                minimum: 0; maximum: root.viewer2d-z-max;
-                value <=> root.viewer2d-z;
-                enabled: root.viewer2d-z-max > 0;
-                changed(v) => { root.viewer2d-z-changed(v); }
+                minimum: 0; maximum: Viewer2dGlobal.viewer2d-z-max;
+                value <=> Viewer2dGlobal.viewer2d-z;
+                enabled: Viewer2dGlobal.viewer2d-z-max > 0;
+                changed(v) => { Viewer2dGlobal.viewer2d-z-changed(v); }
             }
         }
     }
@@ -91,9 +93,9 @@ export component PaneViewer2d inherits VerticalLayout {
             RangeSlider {
                 horizontal-stretch: 1;
                 minimum: 0.0; maximum: 255.0;
-                lo <=> root.viewer2d-lo;
-                hi <=> root.viewer2d-hi;
-                changed(l, h) => { root.viewer2d-settings-changed(); }
+                lo <=> Viewer2dGlobal.viewer2d-lo;
+                hi <=> Viewer2dGlobal.viewer2d-hi;
+                changed(l, h) => { Viewer2dGlobal.viewer2d-settings-changed(); }
             }
         }
     }
@@ -110,7 +112,7 @@ export component PaneViewer2d inherits VerticalLayout {
             viewport-height: dd-entries.preferred-height;
 
             dd-entries := VerticalLayout {
-                for entry[i] in root.project-tree: Rectangle {
+                for entry[i] in ProjectGlobal.project-tree: Rectangle {
                     height: 22px;
                     background: row-ta.has-hover ? #2A3A4A
                               : root.dd-row == i ? #1E3A5F : #1E1E1E;
@@ -119,7 +121,7 @@ export component PaneViewer2d inherits VerticalLayout {
                             root.dd-row = i;
                             root.dd-label = entry.label;
                             root.dd-open = false;
-                            root.viewer2d-object-selected(entry.project-id, entry.object-id);
+                            Viewer2dGlobal.viewer2d-object-selected(entry.project-id, entry.object-id);
                         }
                     }
                     HorizontalLayout {

@@ -11,7 +11,8 @@ use actix_web::{web, App, HttpResponse, HttpServer};
 use bytes::Bytes;
 use ripp::renderer3d::Renderer3d;
 use ripp::micromanager::{start_camera_thread, CameraHandle, CameraImage, DeviceProp};
-use ripp::{AppWindow, DevicePropEntry};
+use ripp::{AppWindow, CameraGlobal, CamPropGlobal, DevicePropEntry, Viewer3dGlobal};
+use slint::ComponentHandle;
 use ripp::app_logic::AppLogic;
 use ripp::session::{Tab3d, Camera3d};
 use futures::stream;
@@ -92,7 +93,7 @@ fn run_render_loop(
     let props_refreshing = logic.props_refreshing.clone();
     let live_running     = logic.live_running.clone();
 
-    ui.on_snap_requested({
+    ui.global::<CameraGlobal>().on_snap_requested({
         let camera = camera.clone();
         let slot   = pending_snap.clone();
         move || {
@@ -102,7 +103,7 @@ fn run_render_loop(
         }
     });
 
-    ui.on_live_toggled({
+    ui.global::<CameraGlobal>().on_live_toggled({
         let camera       = camera.clone();
         let slot         = pending_snap.clone();
         let live_running = live_running.clone();
@@ -121,7 +122,7 @@ fn run_render_loop(
         }
     });
 
-    ui.on_camera_panned({
+    ui.global::<CameraGlobal>().on_camera_panned({
         let camera       = camera.clone();
         let slot         = pending_props.clone();
         let refreshing   = props_refreshing.clone();
@@ -140,7 +141,7 @@ fn run_render_loop(
         }
     });
 
-    ui.on_camera_scrolled({
+    ui.global::<CameraGlobal>().on_camera_scrolled({
         let camera     = camera.clone();
         let slot       = pending_props.clone();
         let refreshing = props_refreshing.clone();
@@ -225,11 +226,11 @@ fn run_render_loop(
 
         // Drain pending snap (apply current lo/hi).
         if let Some(raw) = pending_snap.lock().unwrap().take() {
-            let lo = ui.get_camera_lo();
-            let hi = ui.get_camera_hi();
+            let lo = ui.global::<CameraGlobal>().get_camera_lo();
+            let hi = ui.global::<CameraGlobal>().get_camera_hi();
             *logic.last_camera_frame.lock().unwrap() =
                 Some((raw.data.clone(), raw.width, raw.height));
-            ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
+            ui.global::<CameraGlobal>().set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
         }
 
         // Drain pending device props.
@@ -237,7 +238,7 @@ fn run_render_loop(
             let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
                 device: p.device.into(), property: p.property.into(), value: p.value.into(),
             }).collect();
-            ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+            ui.global::<CamPropGlobal>().set_device_props(Rc::new(slint::VecModel::from(rows)).into());
         }
 
         slint::platform::update_timers_and_animations();
@@ -258,7 +259,7 @@ fn run_render_loop(
         let pixels = teapot.render_frame(&camera);
         let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
         pb.make_mut_bytes().copy_from_slice(&pixels);
-        ui.set_teapot_image(slint::Image::from_rgba8(pb));
+        ui.global::<Viewer3dGlobal>().set_teapot_image(slint::Image::from_rgba8(pb));
         let t1 = Instant::now();
 
         // Render full Slint UI to RGB565 buffer.

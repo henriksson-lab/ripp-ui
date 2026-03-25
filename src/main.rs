@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use slint::ComponentHandle;
-use ripp::{AppWindow, DevicePropEntry};
+use ripp::{AppWindow, CameraGlobal, CamPropGlobal, DevicePropEntry, Viewer3dGlobal};
 use ripp::app_logic::AppLogic;
 use ripp::renderer3d::Renderer3d;
 use ripp::micromanager::start_camera_thread;
@@ -52,10 +52,10 @@ fn main() {
                     let lcf   = last_camera_frame.clone();
                     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
                     if app_weak.upgrade_in_event_loop(move |ui: AppWindow| {
-                        let lo = ui.get_camera_lo();
-                        let hi = ui.get_camera_hi();
+                        let lo = ui.global::<CameraGlobal>().get_camera_lo();
+                        let hi = ui.global::<CameraGlobal>().get_camera_hi();
                         *lcf.lock().unwrap() = Some(frame);
-                        ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
+                        ui.global::<CameraGlobal>().set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
                         let _ = done_tx.send(());
                     }).is_err() { break; }
                     done_rx.recv().ok();
@@ -70,7 +70,7 @@ fn main() {
     // ── Desktop-specific callbacks ────────────────────────────────────────────
 
     // Manual snap: spawn thread, use upgrade_in_event_loop for lo/hi.
-    app.on_snap_requested({
+    app.global::<CameraGlobal>().on_snap_requested({
         let cam               = cam.clone();
         let last_camera_frame = last_camera_frame.clone();
         let app_weak          = app_weak.clone();
@@ -82,17 +82,17 @@ fn main() {
                 let raw   = cam.snap();
                 let frame = (raw.data.clone(), raw.width, raw.height);
                 app_weak.upgrade_in_event_loop(move |ui: AppWindow| {
-                    let lo = ui.get_camera_lo();
-                    let hi = ui.get_camera_hi();
+                    let lo = ui.global::<CameraGlobal>().get_camera_lo();
+                    let hi = ui.global::<CameraGlobal>().get_camera_hi();
                     *last_camera_frame.lock().unwrap() = Some(frame);
-                    ui.set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
+                    ui.global::<CameraGlobal>().set_camera_image(raw.to_slint_image(ripp::session::ColorMappingRange { lo, hi }));
                 }).ok();
             });
         }
     });
 
     // Live toggle: start/stop the live loop.
-    app.on_live_toggled({
+    app.global::<CameraGlobal>().on_live_toggled({
         let session      = logic.session.clone();
         let app_weak     = app_weak.clone();
         let live_running = live_running.clone();
@@ -112,7 +112,7 @@ fn main() {
     });
 
     // Camera panned: move stage, refresh props via upgrade_in_event_loop.
-    app.on_camera_panned({
+    app.global::<CameraGlobal>().on_camera_panned({
         let cam        = cam.clone();
         let app_weak   = app_weak.clone();
         let refreshing = logic.props_refreshing.clone();
@@ -123,7 +123,7 @@ fn main() {
     });
 
     // Camera scrolled: move Z stage, refresh props.
-    app.on_camera_scrolled({
+    app.global::<CameraGlobal>().on_camera_scrolled({
         let cam        = cam.clone();
         let app_weak   = app_weak.clone();
         let refreshing = logic.props_refreshing.clone();
@@ -138,7 +138,7 @@ fn main() {
     // directly from the Slint layout callback — no AppWindow property needed.
     let renderer = Rc::new(std::cell::RefCell::new(Renderer3d::new(TEAPOT_W, TEAPOT_H)));
 
-    app.on_viewer3d_resized({
+    app.global::<Viewer3dGlobal>().on_viewer3d_resized({
         let renderer = renderer.clone();
         move |w, h| {
             if w > 0.0 && h > 0.0 {
@@ -177,7 +177,7 @@ fn main() {
                 };
                 let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(vw, vh);
                 pb.make_mut_bytes().copy_from_slice(&pixels);
-                ui.set_teapot_image(slint::Image::from_rgba8(pb));
+                ui.global::<Viewer3dGlobal>().set_teapot_image(slint::Image::from_rgba8(pb));
             }
         },
     );
@@ -203,7 +203,7 @@ fn spawn_props_refresh(
                 let rows: Vec<DevicePropEntry> = props.into_iter().map(|p| DevicePropEntry {
                     device: p.device.into(), property: p.property.into(), value: p.value.into(),
                 }).collect();
-                ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+                ui.global::<CamPropGlobal>().set_device_props(Rc::new(slint::VecModel::from(rows)).into());
             }).ok();
         });
     }

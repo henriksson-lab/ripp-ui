@@ -3,7 +3,7 @@ use slint::ComponentHandle;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
-use crate::{AppWindow, DevicePropEntry, LeftTabEntry, ProjectTreeEntry, TabMenuAction};
+use crate::{AppWindow, CamPropGlobal, DevicePropEntry, LeftTabEntry, ProjectTreeEntry, TabMenuAction};
 use crate::session::{RippSession, TabPane, TabType, CallbackCtx, flatten_session};
 use crate::renderer2d::Viewer2dRenderer;
 use crate::micromanager::CameraHandle;
@@ -111,7 +111,7 @@ impl AppLogic {
             let rows: Vec<DevicePropEntry> = cam.device_props().into_iter()
                 .map(|p| DevicePropEntry { device: p.device.into(), property: p.property.into(), value: p.value.into() })
                 .collect();
-            ui.set_device_props(Rc::new(slint::VecModel::from(rows)).into());
+            ui.global::<CamPropGlobal>().set_device_props(Rc::new(slint::VecModel::from(rows)).into());
         };
 
         let add_demo_camera: Option<Rc<dyn Fn()>> = Some(Rc::new(move || {

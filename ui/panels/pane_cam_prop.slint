@@ -1,8 +1,10 @@
 import { DevicePropEntry } from "../types.slint";
 
-export component PaneCamProp inherits VerticalLayout {
+export global CamPropGlobal {
     in property <[DevicePropEntry]> device-props;
+}
 
+export component PaneCamProp inherits VerticalLayout {
     private property <length> col1-w: 100px;
     private property <length> col3-w: 120px;
     private property <length> hdrag1: 0;
@@ -49,7 +51,7 @@ export component PaneCamProp inherits VerticalLayout {
             viewport-height: prop-entries.preferred-height;
 
             prop-entries := VerticalLayout {
-                for entry in root.device-props: Rectangle {
+                for entry in CamPropGlobal.device-props: Rectangle {
                     height: 22px;
                     background: prop-row.has-hover ? #1E1E1E : #000000;
                     prop-row := TouchArea {}

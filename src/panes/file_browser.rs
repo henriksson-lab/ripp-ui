@@ -3,7 +3,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicBool};
 use slint::ComponentHandle;
-use crate::{AppWindow, FileEntry};
+use crate::{AppWindow, FileBrowserGlobal, FileEntry, ProjectGlobal};
 use crate::session::{TabFileBrowser, TabPane, TabType, CallbackCtx, ActivationContext, PaneLocation, BioformatsData, ProjectData};
 use crate::app_logic::build_tree;
 
@@ -69,11 +69,11 @@ impl TabType for TabTypeFileBrowser {
         let cwd     = ctx.cwd.clone();
 
         // ── Initial state ─────────────────────────────────────────────────────
-        app.set_current_path(cwd.borrow().to_string_lossy().to_string().into());
-        app.set_file_list(Rc::new(slint::VecModel::from(load_dir(&cwd.borrow()))).into());
+        app.global::<FileBrowserGlobal>().set_current_path(cwd.borrow().to_string_lossy().to_string().into());
+        app.global::<FileBrowserGlobal>().set_file_list(Rc::new(slint::VecModel::from(load_dir(&cwd.borrow()))).into());
 
         // ── Callbacks ─────────────────────────────────────────────────────────
-        app.on_navigate_to({
+        app.global::<FileBrowserGlobal>().on_navigate_to({
             let cwd      = cwd.clone();
             let app_weak = app.as_weak();
             move |segment| {
@@ -81,13 +81,13 @@ impl TabType for TabTypeFileBrowser {
                 if segment == ".." { cwd.pop(); } else { cwd.push(segment.as_str()); }
                 let entries = load_dir(&cwd);
                 if let Some(ui) = app_weak.upgrade() {
-                    ui.set_current_path(cwd.to_string_lossy().to_string().into());
-                    ui.set_file_list(Rc::new(slint::VecModel::from(entries)).into());
+                    ui.global::<FileBrowserGlobal>().set_current_path(cwd.to_string_lossy().to_string().into());
+                    ui.global::<FileBrowserGlobal>().set_file_list(Rc::new(slint::VecModel::from(entries)).into());
                 }
             }
         });
 
-        app.on_open_file({
+        app.global::<FileBrowserGlobal>().on_open_file({
             let session  = session.clone();
             let cwd      = cwd.clone();
             let app_weak = app.as_weak();
@@ -102,7 +102,7 @@ impl TabType for TabTypeFileBrowser {
                         session.borrow_mut().projects.get_mut(&proj_id).unwrap()
                             .root.data = ProjectData::Bioformats(bf_data);
                         if let Some(ui) = app_weak.upgrade() {
-                            ui.set_project_tree(build_tree(&session.borrow()));
+                            ui.global::<ProjectGlobal>().set_project_tree(build_tree(&session.borrow()));
                             ui.set_active_right_bottom_tab(0);
                         }
                     }
