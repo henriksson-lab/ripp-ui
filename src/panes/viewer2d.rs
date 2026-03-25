@@ -206,6 +206,29 @@ impl TabType for TabTypeViewer2d {
             }
         });
 
+        app.on_viewer2d_resized({
+            let session  = session.clone();
+            let viewer2d = viewer2d.clone();
+            let app_weak = app.as_weak();
+            move |w, h| {
+                if w <= 0.0 || h <= 0.0 { return; }
+                viewer2d.borrow_mut().resize(w as u32, h as u32);
+                if let Some(ui) = app_weak.upgrade() {
+                    let tab_idx = ui.get_active_left_tab() as usize;
+                    let color = ColorMappingRange { lo: ui.get_viewer2d_lo(), hi: ui.get_viewer2d_hi() };
+                    let cam = {
+                        let s = session.borrow();
+                        s.tabs_left.get(tab_idx)
+                            .and_then(|t| t.as_any().downcast_ref::<Tab2d>())
+                            .map(|t2d| Camera2d { x: t2d.camera.x, y: t2d.camera.y, zoom: t2d.camera.zoom })
+                    };
+                    if let Some(cam) = cam {
+                        render(&viewer2d.borrow(), cam, color, &ui);
+                    }
+                }
+            }
+        });
+
         app.on_viewer2d_z_changed({
             let session  = session.clone();
             let viewer2d = viewer2d.clone();

@@ -38,11 +38,13 @@ export component RightTopPane inherits Rectangle {
     callback tab-action(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
+    callback viewer3d-resized(float, float);
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
     callback viewer2d-settings-changed();
     callback viewer2d-z-changed(float);
     callback viewer2d-object-selected(int, int);
+    callback viewer2d-resized(float, float);
     callback snap-requested();
     callback live-toggled(bool);
     callback camera-panned(float, float);
@@ -96,11 +98,13 @@ export component RightTopPane inherits Rectangle {
         tab-action(i, a)               => { root.tab-action(i, a); }
         viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
         viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
+        viewer3d-resized(w, h)         => { root.viewer3d-resized(w, h); }
         viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
         viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
         viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
         viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
         viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
+        viewer2d-resized(w, h)         => { root.viewer2d-resized(w, h); }
         snap-requested()               => { root.snap-requested(); }
         live-toggled(v)                => { root.live-toggled(v); }
         camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }
@@ -157,11 +161,13 @@ export component RightBottomPane inherits Rectangle {
     callback tab-action(int, int);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
+    callback viewer3d-resized(float, float);
     callback viewer2d-panned(float, float);
     callback viewer2d-scrolled(float);
     callback viewer2d-settings-changed();
     callback viewer2d-z-changed(float);
     callback viewer2d-object-selected(int, int);
+    callback viewer2d-resized(float, float);
     callback snap-requested();
     callback live-toggled(bool);
     callback camera-panned(float, float);
@@ -215,11 +221,13 @@ export component RightBottomPane inherits Rectangle {
         tab-action(i, a)               => { root.tab-action(i, a); }
         viewer3d-panned(dx, dy)        => { root.viewer3d-panned(dx, dy); }
         viewer3d-scrolled(d)           => { root.viewer3d-scrolled(d); }
+        viewer3d-resized(w, h)         => { root.viewer3d-resized(w, h); }
         viewer2d-panned(dx, dy)        => { root.viewer2d-panned(dx, dy); }
         viewer2d-scrolled(d)           => { root.viewer2d-scrolled(d); }
         viewer2d-settings-changed()    => { root.viewer2d-settings-changed(); }
         viewer2d-z-changed(v)          => { root.viewer2d-z-changed(v); }
         viewer2d-object-selected(p, o) => { root.viewer2d-object-selected(p, o); }
+        viewer2d-resized(w, h)         => { root.viewer2d-resized(w, h); }
         snap-requested()               => { root.snap-requested(); }
         live-toggled(v)                => { root.live-toggled(v); }
         camera-panned(dx, dy)          => { root.camera-panned(dx, dy); }

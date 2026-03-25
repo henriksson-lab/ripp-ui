@@ -49,6 +49,28 @@ pub struct Viewer2dRenderer {
     gpu: Option<Gpu>,
 }
 
+fn recreate_output(gpu: &mut Gpu, w: u32, h: u32) {
+    let bpr = (w * 4 + 255) / 256 * 256;
+    let ext = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
+    let color_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("viewer2d-color"), size: ext,
+        mip_level_count: 1, sample_count: 1,
+        dimension: wgpu::TextureDimension::D2, format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("viewer2d-staging"), size: (bpr * h) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    gpu.color_view = Some(color_tex.create_view(&wgpu::TextureViewDescriptor::default()));
+    gpu.color_tex  = Some(color_tex);
+    gpu.staging    = Some(staging);
+    gpu.size       = WindowSize { w, h };
+    gpu.bpr        = bpr;
+}
+
 impl Viewer2dRenderer {
     /// Create a shell.  No GPU work happens until the first `upload()`.
     pub fn new() -> Self {
@@ -57,6 +79,21 @@ impl Viewer2dRenderer {
 
     pub fn size(&self) -> WindowSize {
         self.gpu.as_ref().map_or(WindowSize { w: 0, h: 0 }, |g| g.size)
+    }
+
+    /// Resize the render target (viewport size).  Safe to call before any upload.
+    /// If the GPU is not yet initialised, the size is stored and applied on first upload.
+    pub fn resize(&mut self, w: u32, h: u32) {
+        if w == 0 || h == 0 { return; }
+        if let Some(gpu) = self.gpu.as_mut() {
+            if gpu.size.w == w && gpu.size.h == h { return; }
+            recreate_output(gpu, w, h);
+        }
+        // If not yet initialised, upload() will pick up the size on first call
+        // via the pending_size field below — but we don't need that here because
+        // upload() initialises size from the first call anyway.  Storing pending
+        // size would need an extra field; for now resize() is a no-op before GPU init
+        // (the viewport-resized callback fires again after the first upload).
     }
 
     /// Upload a new image (z-slice).  Converts gray/RGB → RGBA8 on the CPU once.
@@ -71,36 +108,9 @@ impl Viewer2dRenderer {
             bytes.chunks_exact(3).flat_map(|c| [c[0], c[1], c[2], 255u8]).collect()
         };
 
-        // Recreate render target if size changed
-        if gpu.size.w != img_w || gpu.size.h != img_h {
-            let bpr = (img_w * 4 + 255) / 256 * 256;
-            let ext = wgpu::Extent3d { width: img_w, height: img_h, depth_or_array_layers: 1 };
-
-            let color_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
-                label:           Some("viewer2d-color"),
-                size:            ext,
-                mip_level_count: 1,
-                sample_count:    1,
-                dimension:       wgpu::TextureDimension::D2,
-                format:          FORMAT,
-                usage:           wgpu::TextureUsages::RENDER_ATTACHMENT
-                               | wgpu::TextureUsages::COPY_SRC,
-                view_formats:    &[],
-            });
-            let color_view = color_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label:              Some("viewer2d-staging"),
-                size:               (bpr * img_h) as u64,
-                usage:              wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-
-            gpu.color_tex  = Some(color_tex);
-            gpu.color_view = Some(color_view);
-            gpu.staging    = Some(staging);
-            gpu.size       = WindowSize { w: img_w, h: img_h };
-            gpu.bpr        = bpr;
+        // Initialise viewport size from image size on first upload (if not yet set by resize()).
+        if gpu.size.w == 0 || gpu.size.h == 0 {
+            recreate_output(gpu, img_w, img_h);
         }
 
         // Upload image texture

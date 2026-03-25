@@ -220,6 +220,40 @@ impl Renderer3d {
         }
     }
 
+    pub fn size(&self) -> WindowSize { self.size }
+
+    /// Recreate size-dependent resources (render target, depth, staging).
+    /// The mesh, shader, and uniforms are unaffected.
+    pub fn resize(&mut self, w: u32, h: u32) {
+        if self.size.w == w && self.size.h == h { return; }
+        let bpr = (w * 4 + 255) / 256 * 256;
+        let ext = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
+
+        let color_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: None, size: ext, mip_level_count: 1, sample_count: 1,
+            dimension: wgpu::TextureDimension::D2, format: FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: None, size: ext, mip_level_count: 1, sample_count: 1,
+            dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, view_formats: &[],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None, size: (bpr * h) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        self.color_view = color_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        self.depth_view = depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        self.color_tex  = color_tex;
+        self.staging    = staging;
+        self.size        = WindowSize { w, h };
+        self.bpr         = bpr;
+    }
+
     /// Render one frame and return destrided RGBA8 bytes (length = w * h * 4).
     pub fn render_frame(&self, cam: &Camera3d) -> Vec<u8> {
         let aspect = self.size.w as f32 / self.size.h as f32;

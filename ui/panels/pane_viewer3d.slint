@@ -2,9 +2,14 @@ export component PaneViewer3d inherits Rectangle {
     in property <image> teapot-image;
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
+    callback viewer3d-resized(float, float);
 
     private property <float> drag-x;
     private property <float> drag-y;
+    private property <float> cur-w: self.width / 1px;
+    private property <float> cur-h: self.height / 1px;
+    changed cur-w => { root.viewer3d-resized(root.cur-w, root.cur-h); }
+    changed cur-h => { root.viewer3d-resized(root.cur-w, root.cur-h); }
 
     Image {
         source: root.teapot-image;

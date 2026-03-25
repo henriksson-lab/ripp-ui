@@ -79,6 +79,10 @@ export component AppWindow inherits Window {
     callback viewer2d-z-changed(float);
     callback viewer3d-panned(float, float);
     callback viewer3d-scrolled(float);
+    callback viewer3d-resized(float, float);
+    callback viewer2d-resized(float, float);
+    in-out property <int> viewer3d-viewport-w: 1;
+    in-out property <int> viewer3d-viewport-h: 1;
     callback panscan-panned(float, float);
     callback panscan-scrolled(float);
     callback panscan-settings-changed();
@@ -190,11 +194,13 @@ export component AppWindow inherits Window {
                 tab-action-left(i, a)      => { root.tab-action-left(i, a); }
                 viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                 viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                viewer3d-resized(w, h)     => { root.viewer3d-resized(w, h); }
                 viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
                 viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
                 viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
                 viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
                 viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                viewer2d-resized(w, h)               => { root.viewer2d-resized(w, h); }
                 snap-requested()           => { root.snap-requested(); }
                 live-toggled(v)            => { root.live-toggled(v); }
                 camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }
@@ -250,11 +256,13 @@ export component AppWindow inherits Window {
                     tab-action(i, a)           => { root.tab-action-right-top(i, a); }
                     viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                     viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                    viewer3d-resized(w, h)     => { root.viewer3d-resized(w, h); }
                     viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
                     viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
                     viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
                     viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
                     viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                    viewer2d-resized(w, h)               => { root.viewer2d-resized(w, h); }
                     snap-requested()           => { root.snap-requested(); }
                     live-toggled(v)            => { root.live-toggled(v); }
                     camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }
@@ -308,11 +316,13 @@ export component AppWindow inherits Window {
                     tab-action(i, a)           => { root.tab-action-right-bottom(i, a); }
                     viewer3d-panned(dx, dy)    => { root.viewer3d-panned(dx, dy); }
                     viewer3d-scrolled(d)       => { root.viewer3d-scrolled(d); }
+                    viewer3d-resized(w, h)     => { root.viewer3d-resized(w, h); }
                     viewer2d-panned(dx, dy)    => { root.viewer2d-panned(dx, dy); }
                     viewer2d-scrolled(d)       => { root.viewer2d-scrolled(d); }
                     viewer2d-settings-changed()          => { root.viewer2d-settings-changed(); }
                     viewer2d-z-changed(v)                => { root.viewer2d-z-changed(v); }
                     viewer2d-object-selected(pid, oid)   => { root.viewer2d-object-selected(pid, oid); }
+                    viewer2d-resized(w, h)               => { root.viewer2d-resized(w, h); }
                     snap-requested()           => { root.snap-requested(); }
                     live-toggled(v)            => { root.live-toggled(v); }
                     camera-panned(dx, dy)      => { root.camera-panned(dx, dy); }

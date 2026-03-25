@@ -124,8 +124,18 @@ fn make_tab_activated_handler(
                 add_sim_camera:  ctx.add_sim_camera.clone(),
                 disconnect_all:  ctx.disconnect_all.clone(),
             };
-            ctx.session.borrow().tabs(loc).get(new_idx)
-                .map(|t| t.on_activated(&ui, &act_ctx));
+            // Obtain a raw pointer so we can drop the borrow before calling
+            // on_activated — which may itself borrow the session (e.g. Tab2d
+            // calls upload → session.borrow_mut()).  The tab cannot be removed
+            // while we are on the single UI thread inside this closure.
+            let tab_ptr: Option<*const dyn TabPane> = {
+                let s = ctx.session.borrow();
+                s.tabs(loc).get(new_idx).map(|t| t.as_ref() as *const dyn TabPane)
+            };
+            if let Some(ptr) = tab_ptr {
+                // SAFETY: single-threaded; tab is not moved or dropped here.
+                unsafe { (*ptr).on_activated(&ui, &act_ctx) };
+            }
         }
     }
 }
@@ -294,8 +304,15 @@ pub fn register(
                     add_sim_camera:  ctx.add_sim_camera.clone(),
                     disconnect_all:  ctx.disconnect_all.clone(),
                 };
-                ctx.session.borrow_mut().tabs_mut(loc).get_mut(tab_idx as usize)
-                    .map(|t| t.on_menu_action(action_id, &ui, &act_ctx));
+                let tab_ptr: Option<*mut dyn TabPane> = {
+                    let mut s = ctx.session.borrow_mut();
+                    s.tabs_mut(loc).get_mut(tab_idx as usize)
+                        .map(|t| t.as_mut() as *mut dyn TabPane)
+                };
+                if let Some(ptr) = tab_ptr {
+                    // SAFETY: single-threaded; tab is not moved or dropped here.
+                    unsafe { (*ptr).on_menu_action(action_id, &ui, &act_ctx) };
+                }
             }
         }
     };

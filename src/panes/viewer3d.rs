@@ -44,6 +44,16 @@ impl TabType for TabTypeViewer3d {
             }
         });
 
+        app.on_viewer3d_resized({
+            let app_weak = app.as_weak();
+            move |w, h| {
+                if let Some(ui) = app_weak.upgrade() {
+                    ui.set_viewer3d_viewport_w(w as i32);
+                    ui.set_viewer3d_viewport_h(h as i32);
+                }
+            }
+        });
+
         app.on_viewer3d_scrolled({
             move |delta| {
                 if let Some(ui) = app_weak.upgrade() {

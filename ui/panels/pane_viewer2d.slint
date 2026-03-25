@@ -15,17 +15,22 @@ export component PaneViewer2d inherits VerticalLayout {
     callback viewer2d-settings-changed();
     callback viewer2d-z-changed(float);
     callback viewer2d-object-selected(int, int);
+    callback viewer2d-resized(float, float);
 
     private property <float>  drag-x;
     private property <float>  drag-y;
     private property <bool>   dd-open: false;
     private property <int>    dd-row: -1;
     private property <string> dd-label: "";
+    private property <float>  cur-w: img-rect.width / 1px;
+    private property <float>  cur-h: img-rect.height / 1px;
+    changed cur-w => { root.viewer2d-resized(root.cur-w, root.cur-h); }
+    changed cur-h => { root.viewer2d-resized(root.cur-w, root.cur-h); }
 
     HorizontalLayout {
         vertical-stretch: 1;
 
-        Rectangle {
+        img-rect := Rectangle {
             horizontal-stretch: 1;
             background: #111111;
             if root.viewer2d-image-loaded: Image {

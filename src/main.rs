@@ -134,7 +134,7 @@ fn main() {
     });
 
     // ── Teapot rendering timer ────────────────────────────────────────────────
-    let renderer = Renderer3d::new(TEAPOT_W, TEAPOT_H);
+    let mut renderer = Renderer3d::new(TEAPOT_W, TEAPOT_H);
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -143,9 +143,8 @@ fn main() {
             let session  = logic.session.clone();
             let app_weak = app_weak.clone();
             move || {
-                let tab_idx = app_weak.upgrade()
-                    .map(|u: AppWindow| u.get_active_left_tab() as usize)
-                    .unwrap_or(0);
+                let Some(ui) = app_weak.upgrade() else { return };
+                let tab_idx = ui.get_active_left_tab() as usize;
                 let camera = {
                     let s = session.borrow();
                     match s.tabs_left.get(tab_idx)
@@ -159,12 +158,13 @@ fn main() {
                         None => return,
                     }
                 };
+                let vw = ui.get_viewer3d_viewport_w().max(1) as u32;
+                let vh = ui.get_viewer3d_viewport_h().max(1) as u32;
+                renderer.resize(vw, vh);
                 let pixels = renderer.render_frame(&camera);
-                let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(TEAPOT_W, TEAPOT_H);
+                let mut pb = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(vw, vh);
                 pb.make_mut_bytes().copy_from_slice(&pixels);
-                if let Some(ui) = app_weak.upgrade() {
-                    ui.set_teapot_image(slint::Image::from_rgba8(pb));
-                }
+                ui.set_teapot_image(slint::Image::from_rgba8(pb));
             }
         },
     );
